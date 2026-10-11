@@ -1,0 +1,77 @@
+STORM EFFECTS CLASS DESIGN
+==========================
+
+Class:
+
+    StormEffectsSystem
+
+Purpose:
+
+    Coordinate lightning, rain, spray, visibility, thunder events, and camera/audio effects from authoritative weather events.
+
+Public API:
+
+    HandleWeather(snapshot);
+    StepFixed(TickId,FixedDeltaSeconds);
+    UpdateVisual(RenderDeltaSeconds,view);
+    AddPasses(graph);
+    DrainThunderEvents();
+    VisibilityMultiplier();
+
+Internal state and components:
+
+    - storm intensity filters.
+    - deterministic lightning schedule/positions.
+    - rain emitters.
+    - exposure/fog overrides.
+    - thunder delay queue.
+
+Lifecycle and ownership:
+
+    does not own weather; owns transient effect instances; audio/particle IDs released on storm end; save stores no cosmetic particles
+
+Error behavior:
+
+    Invalid/stale weather generation, queue/capacity, or visual/audio dependency
+    failure returns StormEffectError. Gameplay lightning events are never
+    dropped; optional visuals/audio are degraded with explicit counters.
+
+Threading and timing constraints:
+
+    lightning gameplay event generated fixed-step; visuals render-step; thunder delay uses simulation/game time; no cross-thread callbacks
+
+Dependencies:
+
+    - WeatherSnapshot/event values.
+    - ParticleSystem.
+    - Audio event queue interface.
+    - SkyAtmosphereSystem.
+    - TickId/FixedDelta values.
+
+Tests:
+
+    - storm enter/exit.
+    - seeded lightning.
+    - thunder distance delay.
+    - pause.
+    - capacity fallback.
+    - intensity bounds.
+
+Implementation rules:
+
+    - Keep implementation-only types out of public headers.
+    - Use RAII and generational IDs; do not expose owning raw pointers.
+    - Validate descriptions before allocating or mutating state.
+    - Publish complete snapshots/generations rather than partially updated data.
+    - Add diagnostics for failure context without making logging a dependency
+      of correctness.
+
+Canonical integration contract:
+
+    Split owner: deterministic lightning schedule/gameplay event generation runs
+    at P4/P8 from WorldSeed128-derived streams; presentation instances run P14
+    using render delta. Thunder events contain source TickId/WorldPosition and
+    physical delay; AudioSystem consumes them without reverse calls. No rendered
+    rain/fog/visibility result becomes authoritative WeatherSystem state.
+
+    See ..\CANONICAL_CONVENTIONS.txt, ..\audio\14_audio_system.txt, and INDEX.txt.

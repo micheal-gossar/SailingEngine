@@ -1,0 +1,186 @@
+OCEAN STAGED IMPLEMENTATION ACCEPTANCE CLASS DESIGN
+===================================================
+
+Class
+-----
+
+    OceanAcceptanceRunner
+
+Purpose
+-------
+
+Turn the architecture into objective stage gates with explicit invariants,
+reference scenes, numeric validation metrics, profiling envelopes, fallback
+tests, and evidence artifacts. No later stage may conceal a failed earlier
+physical or ownership contract.
+
+Public API
+----------
+
+    AcceptanceRunId Start(
+        OceanAcceptanceStage, const AcceptanceTargetProfile&);
+    AcceptanceStatus Poll(AcceptanceRunId) const;
+    OceanAcceptanceReport Complete(AcceptanceRunId);
+    Result<void, AcceptanceError> Compare(
+        const OceanAcceptanceReport&, const AcceptanceThresholdSet&) const;
+    void ExportEvidence(AcceptanceRunId, EvidenceSink&);
+
+Key data structures
+-------------------
+
+AcceptanceTargetProfile fixes hardware/device/driver, resolution/views, worker
+count, deterministic build flags, sea/weather/bathymetry scenario, observer/
+vessel/agent counts, warmup/sample duration, quality policy, and thermal policy.
+AcceptanceThresholdSet stores unit-aware tolerances with rationale and review
+owner. OceanAcceptanceReport stores convention/module hashes, input capture,
+numeric errors, invariant counts, p50/p95/p99/worst timings, memory/transfer/
+readback budgets, screenshots only where appropriate, and pass/fail evidence.
+
+Algorithms and models
+---------------------
+
+Metrics are computed from independent references where possible: analytic
+sinusoids/dispersion/tides, CPU DFT for small spectra, laboratory/numerical
+coastal benchmarks, closed-domain conservation, ray/Beer-Lambert/Fresnel
+references, and ledger arithmetic. Performance runs warm caches, separate
+startup/streaming bursts from steady state, sample enough frames/ticks for p99,
+and report unsupported rather than pass when a feature cannot run.
+
+Initial reference-high envelope for one 1920x1080 view is configurable, not a
+hard-coded engine constant:
+    Ocean simulation coordinator p95 <= 0.35 ms.
+    Authoritative ocean jobs p95 <= 3.0 ms total worker time critical path.
+    50,000 batched physics query fields p95 <= 2.0 ms on reference CPU.
+    Total ocean GPU p95 <= 4.5 ms, with no normal-frame host/queue idle.
+    Ocean GPU persistent memory <= 512 MiB; CPU resident <= 384 MiB.
+    Transfer p95 <= 8 MiB/frame; diagnostic readback <= 64 KiB/s.
+Each shipping platform owns calibrated Low/Medium/High envelopes. A result may
+change the selected quality tier, never the authoritative physics convention.
+
+Validation threshold seeds, subject to benchmark calibration:
+    FFT Hermitian residual <= 1e-6 normalized and Parseval energy error <= 0.5%.
+    Significant wave height/peak period error <= 1% against generated target.
+    CPU/GPU retained-band height <= 0.002 m, velocity <= 0.01 m/s, normal
+        angular error <= 0.25 degree on full-float reference paths.
+    Closed coastal step normalized volume residual <= 1e-6; one-hour cumulative
+        <= 1e-4; depth >= -1e-6 m before positivity correction.
+    Mixed-domain exchanged volume <= 1e-4 relative and wave-energy flux <= 2%.
+    Wake source/reaction impulse residual <= 1%; no growing unforced mode.
+    Fresnel/Beer-Lambert reference relative error <= 1%; BRDF/media furnace
+        excess energy <= 2%; normalized caustic deposited power <= 2%.
+    Population plus reservations is exact in integer individuals; biomass/
+        trophic ledger residual <= configured integration tolerance.
+Threshold changes require evidence/versioning; they cannot be loosened silently.
+
+Staged implementation acceptance tests
+--------------------------------------
+
+Stage 0 - contracts and harness:
+    Unit/datum/Fourier/shader constants match; generation/ownership DAG valid;
+    capture/replay and headless metrics work. No implicit-unit API remains.
+
+Stage 1 - forcing and authoritative deep queries:
+    Tide/current/epoch goldens pass. Spectrum initialization, conjugate pairs,
+    analytic evolution, dispersion, hull response band, SIMD/scalar/batch,
+    huge-coordinate/origin, and save replay meet thresholds.
+
+Stage 2 - GPU deep ocean and surface:
+    Every FFT stage/barrier passes validation on unified/split queues;
+    multi-cascade energy/phase seam and CPU/GPU conformance pass; surface
+    Fresnel/reflection/refraction/motion/history tests and GPU budget pass.
+
+Stage 3 - bathymetry and coast:
+    Authoring datum, no-data, LOD seams, wet/dry benchmarks, boundary types,
+    refraction/shoaling/breaking, neighbor flux, deep/coastal exchange, stream
+    replacement, mixed-LOD subcycle/reflux, and conservation gates pass.
+
+Stage 4 - vessel interactions:
+    Phased physics ownership, displacement/propulsor sources, Kelvin and shallow
+    wakes, energy/impulse ledgers, handoff, stability soak, many-vessel budget,
+    and quality invariance pass.
+
+Stage 5 - underwater/effects:
+    Media/optics/caustic references, above/below transition, temporal stability,
+    foam advection/decay, spray/bubble ledgers, pool pressure, device loss, and
+    rendering budget pass.
+
+Stage 6 - streaming/network/save:
+    Fast multi-observer traversal, negative/huge cells, rebasing with in-flight
+    frames, interrupted save/schema migration, unloaded catch-up, late join/
+    correction, and deterministic authoritative hashes pass.
+
+Stage 7 - ecosystem, agents, habitats, acoustics:
+    Seasonal migration/food-web/carrying-capacity long runs, promotion ledgers,
+    school/pod/seabird tiers, animation/avoidance/vessel response, habitat
+    stream/LOD, acoustic delay/attenuation, and population/performance gates pass.
+
+Stage 8 - shipping soak and fallback:
+    Eight-hour storm/coast/many-vessel/ecosystem soak; allocation/I/O/device/
+    missing-data fault injection; every quality transition/fallback; no growth,
+    invariant failure, authoritative hash change, validation hazard, or stall.
+
+Update rates, threading, and GPU ownership
+-----------------------------------------
+
+Headless CPU gates run in CI per change; compact GPU smoke gates run on supported
+workers; full benchmark/soak runs nightly or before release. The runner invokes
+modules through public capture/test hooks and owns evidence buffers only. GPU
+queries/readback are delayed via OceanGpuExecutionPlan and excluded from timed
+windows unless explicitly measured.
+
+Lifecycle and dependencies
+--------------------------
+
+Load contract and threshold versions before a run, create an isolated world from
+the recorded profile, warm it, measure, flush evidence under the session/build
+artifact policy, and destroy it while checking leaks/retirement. It depends on
+87_ocean_conventions_invariants.txt, 88_ocean_gpu_execution_sync.txt,
+89_bathymetry_pipeline.txt, 86_ocean_validation_quality.txt, and all tested
+modules 72 through 85.
+
+Failure and error behavior
+--------------------------
+
+Errors include ReferenceUnavailable, UnsupportedTarget, ThresholdUnversioned,
+CaptureMismatch, InsufficientSamples, ThermalThrottle, MetricOverflow,
+ValidationFailure, PerformanceRegression, and EvidenceWriteFailure. Unsupported
+or invalid measurement never becomes pass. A physical/deterministic failure
+blocks its stage regardless of frame rate. A performance failure may select and
+rerun a lower visual tier only if authoritative capture hashes remain equal.
+
+Deterministic and testing strategy
+----------------------------------
+
+The runner itself has tests for percentile math, units, threshold boundaries,
+warmup exclusion, clock/timestamp calibration, shuffled evidence order,
+unsupported classification, capture replay, report schema migration, and
+intentional invariant/fault detection. Runs repeat with different worker counts
+and render cadences; supported deterministic CPU builds require exact
+authoritative hashes, while cross-device visual paths use declared tolerances.
+
+Performance and scalability
+---------------------------
+
+Use minimal reference scenes for per-module CI and compositional stress scenes
+for nightly runs. Store numeric summaries and compact failure captures rather
+than unbounded traces. Bisectable metrics name producer, quality, scenario, and
+generation. Baselines use rolling reviewed versions, never automatic acceptance
+of the latest slower result.
+
+Integration points
+------------------
+
+CI/test runners call this class; OceanValidationAndQuality supplies metrics and
+invariants; DebugDiagnostics presents local reports; GraphicsQualityManager consumes
+only approved envelopes. Each staged implementation issue links its acceptance
+stage and threshold evidence. Architecture is complete only when Stage 8 passes
+on every shipping target profile.
+
+Engine-wide integration contract
+--------------------------------
+
+Normative ocean specialization of ..\INTEGRATION_ACCEPTANCE_MATRIX.txt.
+Evidence uses the root type/unit/result/phase/lifetime vocabulary and validates
+both ocean-specific and engine ownership DAGs. The runner owns evidence buffers
+only, never module state/resources or baseline acceptance policy. Unsupported,
+missing, or unversioned measurements cannot pass.

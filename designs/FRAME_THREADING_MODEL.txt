@@ -1,0 +1,171 @@
+ENGINE FRAME, UPDATE PHASE, AND THREADING MODEL
+===============================================
+
+Status and scope
+----------------
+
+Normative programming contract for engine scheduling. It defines ownership
+phases, not a requirement for one OS thread per logical executor. Dependencies
+below are data-flow edges; construction/destruction order is in
+OWNERSHIP_LIFETIME_SHUTDOWN.txt.
+
+Frame and fixed-tick sequence
+-----------------------------
+
+P0 Platform and input (main thread)
+    WindowPlatform drains callbacks into value events. InputActionSystem and
+    UISystem consume them; callbacks never invoke gameplay or Vulkan.
+
+P1 Clock planning (main/simulation coordinator)
+    SimulationClock converts monotonic wall time to a bounded StepPlan. Dropped
+    catch-up time is diagnosed. Pause produces no authoritative ticks.
+
+For every planned TickId, execute P2-P12 exactly in order:
+
+P2 Command ingress
+    GameplayCommandBus latches timestamped input, UI, debug, network, and AI
+    commands, validates target generations, sorts by (target tick, source,
+    sequence), and publishes one immutable command batch.
+
+P3 Boundary transactions
+    WorldStreamingManager commits prepared cell activation/eviction;
+    WorldCoordinateSystem commits a prepared origin generation; AssetManager
+    publishes CPU-only generations needed by simulation. No I/O blocks here.
+
+P4 Time and environment
+    TimeOfDaySystem and WeatherSystem advance from FixedDelta and publish
+    immutable snapshots. OceanEnvironmentForcing latches these inputs for the
+    next ocean generation. Weather never calls ocean, audio, or render systems.
+
+P5 Ocean/physics input latch
+    OceanDomain::BeginPhysicsPhase latches coherent ocean generation N.
+    Navigation/AI/control consume world N snapshots and emit vessel controls;
+    no system may mutate generation N.
+
+P6 Pre-physics force assembly
+    VesselSystem orders sail aerodynamics, rudder, buoyancy, hydrodynamics,
+    anchors/moorings, propulsion, and pending damage mass changes. All sample
+    OceanQueryService generation N in batches. Each force records one owner;
+    no subsystem both applies and returns the same reaction.
+
+P7 Physics
+    PhysicsWorld applies queued structural commands, integrates one FixedDelta,
+    solves constraints/collisions, and publishes body state plus ordered
+    collision/query events. Physics callbacks only enqueue value events.
+
+P8 Post-physics sailing and gameplay
+    VesselSystem emits post-step kinematics. CollisionSystem/CombatSystem route
+    validated damage events; DamageStabilitySystem stages next-tick mass and
+    flooding changes. Inventory/economy transactions commit before MissionSystem
+    consumes the resulting ordered events. Recursive same-tick command dispatch
+    is forbidden.
+
+P9 Ocean coupling completion
+    OceanDomain accepts the one post-physics OceanCouplingBatch, advances wakes
+    and coast from N to N+1, and publishes N+1. Ocean-owned reaction, if any, is
+    queued once for P6 of the next tick. There is no vessel->wake->vessel
+    same-tick cycle.
+
+P10 World, navigation, ecosystem, and AI maintenance
+    Streaming participants, NavigationGraph, habitat/ecosystem, marine agents,
+    acoustics, and lower-frequency systems advance on integer tick divisors.
+    Cross-cell flux/ledger reductions complete in stable key order before
+    publication.
+
+P11 Persistence/network snapshots and events
+    Registered providers publish immutable schema values and dirty markers.
+    SaveSystem/network serialization can copy them asynchronously; neither
+    service owns or mutates live subsystem state.
+
+P12 Render/audio snapshot capture
+    RenderInterpolationSystem captures previous/current render-relevant values.
+    PresentationModel builds HUD and audio control snapshots. This is the only
+    simulation-to-presentation publication point.
+
+After all planned ticks:
+
+P13 Presentation publication (main/render boundary)
+    Apply validated configuration/hot-reload generations and construct
+    interpolation alpha. A zero-tick frame reuses the last two snapshots.
+
+P14 Render extraction (render thread/jobs)
+    CameraSystem and RenderInterpolationSystem build immutable view/world
+    packets. Render systems read packets only; jobs may cull/build lists.
+
+P15 GPU frame build and submission (render thread)
+    FrameManager acquires a FrameSlotId and swapchain image. RenderGraph compiles
+    declared uses. CommandScheduler allocates/records/submits queue work and
+    returns GpuCompletionSet. SwapchainManager presents through the scheduler's
+    binary/timeline bridge. No normal-frame host, queue, or device idle wait.
+
+P16 Retirement and diagnostics
+    FrameManager polls CommandScheduler completion, resets only completed frame
+    slots, and drains its GpuRetirementQueue. Diagnostics consume delayed CPU/
+    GPU timing. Asset/GPU replacements whose readers and completion sets are
+    done may now be destroyed.
+
+Thread and blocking rules
+-------------------------
+
+Main/simulation:
+    Authoritative mutation only in P2-P12. May wait at explicit job join points
+    before publication, never on file I/O, render presentation, or diagnostic
+    GPU readback.
+
+Render:
+    Owns Vulkan object mutation, render graph build, queue submission, and frame
+    slot state. It reads immutable snapshots. It never waits on simulation in a
+    way that changes tick cadence.
+
+Job workers:
+    Read immutable generations and write private output. They do not access
+    thread-confined Vulkan pools, mutable ECS storage, or call user callbacks.
+    Cancellation and failure are value results joined by the owning phase.
+
+Audio callback:
+    Reads one bounded AudioFrame built off-thread. On underrun it reuses the last
+    valid frame and increments an atomic counter. It never calls diagnostics.
+
+Platform/C callbacks:
+    `noexcept`; copy bounded data into a queue and return the backend-required
+    status. No C boundary observes a C++ exception.
+
+Snapshot handoff and back-pressure
+----------------------------------
+
+Each handoff names owner, generation, producer phase, consumer phases, units,
+and retirement condition. Bounded queues expose Full/BackPressure; they never
+silently overwrite authoritative commands. Optional visual/debug queues may
+drop by documented stable priority with a visible counter. A late generation is
+held or rejected explicitly, never mixed with newer fields.
+
+Render interpolation and variable-rate work
+-------------------------------------------
+
+Only P14-P16 use render delta. Systems running below the fixed rate schedule on
+TickId divisors or rational accumulators and publish bracketing snapshots.
+Physics, gameplay commands, weather, ocean authoritative queries, AI decisions,
+save/network state, and audio event times use TickId/FixedDelta. Presentation
+may smooth copied values but cannot feed the smoothed value back.
+
+Cycle breaks
+------------
+
+All reverse-looking edges use immutable snapshots, command/event queues, or
+registrations:
+    renderer -> simulation: prohibited;
+    UI/audio/diagnostics -> gameplay: commands only;
+    save/network -> world: validated load/command transactions only;
+    ocean wake -> vessel: next-tick tagged reaction only;
+    streaming participant -> coordinator: readiness/cost/status values only;
+    asset consumer -> hot reload: retained generation and readiness only.
+
+Tests
+-----
+
+Test phase-order rejection, multiple/no fixed steps, pause/minimize, dropped
+catch-up, different render cadences, worker counts, queue families, delayed GPU,
+queue overflow, origin shift, streaming activation, device loss, save during
+load, and shutdown during every phase. Supported deterministic builds must
+produce equal authoritative hashes independent of P14-P16.
+

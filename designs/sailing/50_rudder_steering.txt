@@ -1,0 +1,75 @@
+RUDDER STEERING CLASS DESIGN
+============================
+
+Class:
+
+    RudderSteeringSystem
+
+Purpose:
+
+    Compute rudder actuator motion and hydrodynamic steering forces from helm commands and local flow.
+
+Public API:
+
+    Register(vessel,rudderDef);
+    SetHelm(vessel,normalized);
+    Step(vessel,bodyState,ocean,FixedDeltaSeconds)->ForceSet;
+    RudderAngle(vessel);
+
+Internal state and components:
+
+    - rudder geometry/coefficients.
+    - commanded/current angle.
+    - rate/torque limits.
+    - damage factor.
+    - local flow cache.
+
+Lifecycle and ownership:
+
+    runtime state owned by VesselSystem or this subsystem by explicit registration; definition shared immutable
+
+Error behavior:
+
+    Invalid/stale rudder, coefficients, command, or ocean/body generation and
+    numerical failure return RudderError. Saturation/rate limiting is explicit
+    telemetry, not a hidden error clamp.
+
+Threading and timing constraints:
+
+    fixed step after ocean sampling and before PhysicsWorld integration; angle rate integrated with fixed delta
+
+Dependencies:
+
+    - VesselStepContext/PhysicsBodySnapshot values.
+    - OceanQueryService local-flow results.
+    - Shared hydrodynamic coefficient format.
+
+Tests:
+
+    - rate limiting.
+    - command clamp.
+    - reverse flow.
+    - zero speed.
+    - damage reduction.
+    - force/torque sign.
+    - unregister.
+
+Implementation rules:
+
+    - Keep implementation-only types out of public headers.
+    - Use RAII and generational IDs; do not expose owning raw pointers.
+    - Validate descriptions before allocating or mutating state.
+    - Publish complete snapshots/generations rather than partially updated data.
+    - Add diagnostics for failure context without making logging a dependency
+      of correctness.
+
+Canonical integration contract:
+
+    Normative P6 ForceSet producer. VesselSystem owns ordering and applies the
+    result once; this system owns only RudderHandle actuator/cache state. Local
+    flow comes from the same OceanSimulationView N as hull forces. Angles are
+    radians, rate rad/s, force newtons, torque N*m. HydrodynamicsSystem and rudder
+    pressure areas cannot overlap without an explicit force-partition asset.
+
+    See INDEX.txt, 49_hydrodynamics.txt, and
+    ..\ocean\76_ocean_query_service.txt.

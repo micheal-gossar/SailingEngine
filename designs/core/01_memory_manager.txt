@@ -1,0 +1,115 @@
+MEMORY MANAGER CLASS DESIGN
+===========================
+
+Class:
+
+    MemoryManager
+
+Purpose:
+
+    Own the Vulkan allocation backend and provide safe buffer/image allocation,
+    mapping, flushing, and statistics. GPU lifetime and deferred destruction
+    are intentionally outside this class; GpuResourceManager transfers retired
+    allocation payloads to FrameManager's GpuRetirementQueue.
+
+Public API:
+
+    class MemoryManager {
+    public:
+        MemoryManager(
+            const vk::raii::Instance& instance,
+            const vk::raii::PhysicalDevice& physicalDevice,
+            const vk::raii::Device& device);
+        ~MemoryManager();
+
+        Result<BufferAllocation, MemoryError> CreateBuffer(
+            const BufferDescription& description);
+        Result<ImageAllocation, MemoryError> CreateImage(
+            const ImageDescription& description);
+        Result<MappedMemory, MemoryError> Map(BufferAllocation& allocation);
+        MemoryStatistics GetStatistics() const;
+    };
+
+Key data types:
+
+    BufferDescription:
+        Size, Vulkan usage, required/preferred memory properties, debug name.
+
+    ImageDescription:
+        Type, extent, format, mip count, array layers, samples, usage, name.
+
+    BufferAllocation/ImageAllocation:
+        Move-only RAII payloads containing resource and allocation metadata.
+        Their destructor is an immediate Vulkan destruction operation. Code that
+        can submit the resource must place the payload in GpuResourceManager;
+        only the retirement queue destroys it after a GpuCompletionSet.
+
+    MappedMemory:
+        Scoped mapped span that flushes/invalidate non-coherent memory when
+        required.
+
+Responsibilities:
+
+    Validate non-zero sizes and valid usage flags.
+    Select compatible memory types.
+    Respect buffer/image alignment.
+    Handle host-visible coherent and non-coherent memory.
+    Track allocation sizes by category.
+    Enforce a configurable memory budget.
+    Name Vulkan resources in debug builds.
+    Report out-of-memory errors with heap/budget context.
+
+Internal components:
+
+    AllocationBackend:
+        VMA allocator or custom Vulkan allocator implementation.
+
+    MemoryBudgetTracker:
+        Records committed, resident, and mapped bytes. Pending-deletion bytes
+        are reported by GpuResourceManager/FrameManager, not double counted.
+
+Rules:
+
+    Allocations are move-only.
+    Never free memory while submitted GPU work can reference it.
+    Never return an unowned raw VkDeviceMemory handle.
+    Never silently fall back from GPU-local to host-visible memory.
+    Mapping non-host-visible memory returns MemoryError::InvalidMapRequest.
+    Integer overflow must be checked before computing allocation sizes.
+
+Errors:
+
+    InvalidDescription
+    NoCompatibleMemoryType
+    BudgetExceeded
+    VulkanAllocationFailed
+    InvalidMapRequest
+
+Tests:
+
+    Create/destroy host upload buffer.
+    Upload and read back a known pattern.
+    Reject zero-sized allocations.
+    Validate move ownership.
+    Validate non-coherent flush ranges.
+    Verify deferred deletion waits for completion.
+    Simulate budget exhaustion.
+    Confirm statistics return to baseline after cleanup.
+
+Dependencies:
+
+    VulkanRuntime
+    DebugDiagnostics observer sink (optional, non-owning)
+
+Canonical integration contract:
+
+    Normative class design. VulkanRuntime outlives this manager. Calls that
+    mutate VMA/Vulkan allocation state run on the render/resource thread;
+    budget snapshots are thread-safe values. Sizes are bytes and offsets obey
+    Vulkan device alignment. This manager does not allocate timeline values,
+    wait for queues, insert barriers, or infer image state.
+
+    See ..\CANONICAL_CONVENTIONS.txt,
+    ..\OWNERSHIP_LIFETIME_SHUTDOWN.txt, ..\ERROR_RESULT_POLICY.txt,
+    ..\vulkan\02_gpu_resource_manager.txt, and
+    ..\vulkan\20_frame_manager.txt.

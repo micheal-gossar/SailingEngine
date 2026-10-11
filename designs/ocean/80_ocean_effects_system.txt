@@ -1,0 +1,149 @@
+OCEAN EFFECTS SYSTEM CLASS DESIGN
+=================================
+
+Class
+-----
+
+    OceanEffectsSystem
+
+Purpose
+-------
+
+Convert resolved wave breaking, crest compression, vessel turbulence, impacts,
+rain, and aeration into persistent foam, whitewater, spray, bubbles, mist, and
+suspended sediment without inventing a second unrelated wave simulation.
+
+Public API
+----------
+
+    void SetQuality(const OceanEffectsQuality&);
+    void Ingest(const OceanEffectsEventBatch&);
+    void AddSimulationPasses(RenderGraphBuilder&, const OceanRenderSnapshot&);
+    void AddRenderPasses(RenderGraphBuilder&, const ViewFamily&);
+    EffectsCpuSummary AcquireAudioSummary() const;
+    OceanEffectsStatistics Statistics() const;
+
+Key data structures
+-------------------
+
+BreakerEvent contains cell/local position, line direction, dissipated energy,
+crest velocity, depth, salinity, and source generation. AerationEvent records
+entrained air volume, momentum, size spectrum, and source. FoamTile stores
+coverage, thickness proxy, age, velocity, and source provenance. SprayParticle
+is a GPU SoA entry with position split, velocity, radius, lifetime, and seed.
+BubbleVolume stores concentration/size bands, rise velocity, turbulence, and
+optical/acoustic coupling. EffectLedger sums input, visible, dissipated, and
+culled energy/air-volume proxies.
+
+Algorithms and models
+---------------------
+
+Wave Jacobian compression proposes deep crest candidates; CoastalOceanSolver's
+breaking dissipation is authoritative near shore; vessel wakes provide
+turbulent/aeration sources. Threshold/hysteresis converts dissipated energy to
+whitewater coverage. Foam advects with surface current plus Stokes drift,
+diffuses, merges conservatively, and decays by calibrated half-life affected by
+temperature/salinity. It does not stick in world screen space.
+
+Foam lifecycle states are CrestWhitewater, AdvectedPatch, ThinFilm, ShoreDeposit,
+and Dissolved. Breaker/wake energy creates coverage/thickness with a calibrated
+J-to-m2 conversion and bounded entrained-air fraction. Conservative
+semi-Lagrangian/BFECC advection carries cell/world position and generation;
+compression/divergence changes thickness, diffusion spreads coverage,
+coalescence preserves covered-volume proxy, and age/temperature/salinity/UV
+drive decay. Shore contact either advects with swash, deposits a bounded beach
+residue, or dissolves; wet/dry changes cannot leave foam over inland terrain.
+Every transition updates EffectLedger.
+
+Spray emission scales with breaker energy and wind shear. Particles integrate
+gravity, drag, wind, collision with water/terrain, and evaporation at a visual
+rate; water re-entry emits bounded ripple/aeration events but cannot recursively
+amplify energy. Bubble size bands rise by buoyancy, advect/diffuse with flow,
+dissolve, and alter optical scattering/acoustic noise. Rain impacts are
+blue-noise distributed by physical precipitation flux. Mist is derived from
+fine spray concentration.
+
+Spray uses metres, m/s, kg-equivalent droplet mass, and joules; emitted kinetic
+energy cannot exceed its event allocation. Bubble bands store air volume
+fraction and radius metres; buoyant rise, pressure expansion, breakup/
+coalescence, dissolution, and surface release conserve or explicitly transfer
+air-volume proxy. Visual particles sample these fields but do not own them.
+Recursive splash/re-entry emission has a gain below one and a depth/event
+cooldown, guaranteeing termination.
+
+Update rates, threading, and GPU ownership
+-----------------------------------------
+
+CPU event producers publish per ocean tick into bounded, sorted rings. Coarse
+physical-source breaker/aeration summaries update at 15-30 Hz for audio/ecology
+only. GPU foam/bubble tiles update at 15-30 Hz and spray each render frame on
+async compute. EffectsSystem owns persistent pools/tiles; RenderGraph owns
+transient lists, compaction, indirect arguments, and barriers. GPU summaries
+are delayed telemetry and never affect vessel physics.
+
+Lifecycle and dependencies
+--------------------------
+
+Initialize pools after ocean simulation and particle/material systems. Stream
+effect tiles with ocean cells; on eviction, retain only meaningful coarse foam/
+aeration state or account it as dissipated. Generation changes reproject valid
+cell-anchored state or clear it with ledger accounting. Device loss discards
+visual particles but preserves CPU source history sufficient for graceful
+restart. See ..\rendering\28_particle_system.txt,
+..\rendering\41_material_system.txt, 75_coastal_ocean_solver.txt,
+77_ocean_interaction_wakes.txt, 78_ocean_surface_renderer.txt, and
+79_underwater_media_renderer.txt.
+
+Failure and error behavior
+--------------------------
+
+Errors include EventOverflow, StaleSourceGeneration, InvalidEnergy,
+EffectPoolExhausted, TileUnavailable, FoamLedgerViolation,
+AirVolumeViolation, RecursiveEmissionLimit, and GpuAllocationFailed. Overflow drops
+lowest-importance visual events deterministically and increments ledger/
+diagnostics; it never blocks the simulation thread. Missing effects do not alter
+ocean shape. Non-finite events are quarantined by source ID. A pool failure
+reduces spray first, then fine bubbles, while retaining coarse foam coverage.
+
+Deterministic and testing strategy
+----------------------------------
+
+Event keys and counter-based random streams make emission independent of GPU
+thread scheduling at aggregate level. Tests cover no-source decay, advection in
+uniform current, foam mass bounds, breaker energy conversion, shore attachment,
+vessel trail continuity, bubble rise/dissolution, rain flux, particle re-entry
+non-amplification, origin shift, stream eviction, pool overflow ordering, and
+save/load of coarse persistent state. GPU statistical tests compare distributions
+and ledgers rather than requiring identical particle order.
+Long-run tests measure foam half-life/coverage, zero-source monotonic decay,
+wet/dry shoreline clearing, bubble air-volume closure, spray ballistic energy,
+recursive gain, and identical aggregate ledgers across quality tiers.
+
+Performance and scalability
+---------------------------
+
+Use sparse clipmapped tiles, append/compact buffers, indirect draws, occupancy
+maps, event LOD, and fixed-capacity pools. Distant breakers render as aggregate
+whitecap coverage; nearby spray/bubbles receive particles. Scale particle count,
+tile resolution/update rate, bubble bands, and mist before foam extent/source
+alignment. Profile events by source, alive/culled particles, tile occupancy,
+compaction cost, overdraw, async overlap, pool pressure, and ledger residual.
+
+Integration points
+------------------
+
+Deep, coastal, and interaction modules produce energy-tagged events. Surface
+renderer consumes foam/whitewater and spray shadowing. Underwater media consumes
+bubbles/sediment concentration. Habitat/ecosystem may consume bounded turbidity
+or disturbance summaries, never individual visual particles. AudioSystem uses
+the rate-limited CPU summary for surf, spray, rain, and bubbles.
+
+Engine-wide integration contract
+--------------------------------
+
+Normative owner of visual effects plus bounded CPU presentation summaries, not
+authoritative water/ecology. Producers publish energy/provenance events after
+P9; GPU simulation/render runs P15 and cannot feed P2-P12. Audio/ecology consume
+separate rate-limited CPU summaries, never GPU particles. Pools/histories retire
+through GpuCompletionSet. VisualSeed is separate from authoritative streams.
+See ..\CANONICAL_CONVENTIONS.txt and ..\FRAME_THREADING_MODEL.txt.

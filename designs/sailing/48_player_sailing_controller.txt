@@ -1,0 +1,79 @@
+PLAYER SAILING CONTROLLER CLASS DESIGN
+======================================
+
+Class:
+
+    PlayerSailingController
+
+Purpose:
+
+    Translate action input into validated vessel commands with assists, response curves, and mode state.
+
+Public API:
+
+    Possess(vessel);
+    Unpossess();
+    Step(InputActionSnapshot,TickId,FixedDeltaSeconds);
+    SetAssist(profile);
+    CurrentCommand() const;
+    HandleAction(action);
+    CameraTarget() const;
+
+Internal state and components:
+
+    - possessed vessel ID.
+    - helm/sail/throttle targets.
+    - smoothing state.
+    - assist mode.
+    - autopilot toggle.
+    - input context.
+
+Lifecycle and ownership:
+
+    controller owns no vessel; commands queued through command bus; possession invalidation is observed and clears state
+
+Error behavior:
+
+    Invalid/stale possession, input/context, queue capacity, and assist profile
+    return ControllerError. A lost vessel clears possession and emits one
+    neutral command; it does not retain a stale target.
+
+Threading and timing constraints:
+
+    fixed simulation tick consumes timestamped input snapshot; render/UI never writes vessel directly; command values clamped
+
+Dependencies:
+
+    - InputActionSystem.
+    - GameplayCommandBus.
+    - VesselStateSnapshot and camera-target presentation values.
+
+Tests:
+
+    - dead zones/curves.
+    - smoothing.
+    - stale vessel.
+    - assist toggle.
+    - pause.
+    - command clamp.
+    - unpossess neutral command.
+
+Implementation rules:
+
+    - Keep implementation-only types out of public headers.
+    - Use RAII and generational IDs; do not expose owning raw pointers.
+    - Validate descriptions before allocating or mutating state.
+    - Publish complete snapshots/generations rather than partially updated data.
+    - Add diagnostics for failure context without making logging a dependency
+      of correctness.
+
+Canonical integration contract:
+
+    Normative command producer. It owns no vessel/camera/input service and never
+    writes VesselSystem directly. P5 consumes a timestamped InputActionSnapshot,
+    TickId, FixedDelta, and possessed EntityId, then enqueues one bounded
+    VesselControlCommand for GameplayCommandBus ordering. CameraTarget is copied
+    presentation data only.
+
+    See ..\platform\11_input_action_system.txt,
+    ..\gameplay\59_gameplay_command_bus.txt, and INDEX.txt.

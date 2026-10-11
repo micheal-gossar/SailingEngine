@@ -1,0 +1,100 @@
+ENTITY REGISTRY CLASS DESIGN
+============================
+
+Class:
+
+    EntityRegistry
+
+Purpose:
+
+    Create generation-checked entity identifiers and store typed components
+    used by rendering, physics, sailing, AI, audio, and gameplay.
+
+Public API:
+
+    EntityId Create();
+    void Destroy(EntityId entity);
+    bool IsAlive(EntityId entity) const;
+
+    template<typename Component, typename... Args>
+    Component& Add(EntityId entity, Args&&... args);
+
+    template<typename Component>
+    void Remove(EntityId entity);
+
+    template<typename Component>
+    Component& Get(EntityId entity);
+
+    template<typename... Components>
+    View<Components...> Query();
+
+EntityId:
+
+    Index.
+    Generation.
+
+Storage:
+
+    One sparse-set component pool per component type.
+    Dense iteration for systems.
+    Generation validation on every public entity operation in debug builds.
+
+Initial components:
+
+    Transform
+    Renderable
+    RigidBodyReference
+    Vessel
+    SailPlan
+    Health
+    Inventory
+    AIController
+    AudioEmitter
+    Light
+
+Rules:
+
+    Destroy increments generation.
+    Stale IDs never access replacement entities.
+    Every fallible operation returns Result; duplicate/missing/stale component
+    access never relies on exceptions or sentinel references.
+    Structural changes during iteration are deferred through a command buffer.
+    Components do not own Vulkan handles.
+    Long-lived external references use EntityId, never component pointers.
+
+Errors:
+
+    InvalidEntity
+    StaleEntity
+    DuplicateComponent
+    MissingComponent
+    StructuralChangeDuringIteration
+
+Tests:
+
+    Create/destroy/reuse index.
+    Detect stale identifier.
+    Add/get/remove component.
+    Query multiple components.
+    Deferred destruction during query.
+    Stable behavior across pool growth.
+    Serialize selected components.
+
+Dependencies:
+
+    None at core level.
+    Systems depend on EntityRegistry, not the reverse.
+
+Canonical integration contract:
+
+    Normative EntityId and component-storage owner. EntityId is exactly
+    index/generation, process-local, and never serialized; save/network use
+    PersistentEntityId resolved by a registered mapping. Component references
+    are call/iteration-scoped. External systems retain EntityId and their own
+    typed handle, never a component pointer. Structural mutation is a P7-boundary
+    command and views declare whether deferred changes are visible.
+
+    Components store AssetId/typed handles or plain values, never owning Vulkan
+    objects. Authoritative mutation is simulation-thread only; P12 copies
+    immutable render/audio/UI/save values. See ..\CANONICAL_CONVENTIONS.txt,
+    ..\FRAME_THREADING_MODEL.txt, and INDEX.txt.

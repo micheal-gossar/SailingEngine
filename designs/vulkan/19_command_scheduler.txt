@@ -1,0 +1,78 @@
+COMMAND SCHEDULER CLASS DESIGN
+==============================
+
+Class:
+
+    CommandScheduler
+
+Purpose:
+
+    Allocate command buffers, submit queue work with explicit dependencies, and retire transient command resources safely.
+
+Public API:
+
+    Begin(QueueId,usage,FrameSlotId) -> Result<CommandRecording,GpuError>;
+    Submit(Submission) -> Result<GpuTicket,GpuError>;
+    IsComplete(ticket);
+    CompletedTimelines() const;
+    Wait(ticket,timeout,ShutdownOrRecoveryToken);
+    Collect(const CompletedGpuTimelines&);
+    ImmediateSubmit(queue,recordFn,StartupOrRecoveryToken);
+
+Internal state and components:
+
+    - per-queue command pools per frame/thread.
+    - one timeline semaphore and monotonically increasing value per QueueId.
+    - pending recycle lists.
+    - binary semaphore bridge for presentation.
+
+Lifecycle and ownership:
+
+    Recordings are move-only; submission consumes recording. Scheduler owns
+    pools/semaphores and is the only allocator of GpuTimelinePoint values.
+    Buffers recycle only after their qualified queue point completes.
+
+Error behavior:
+
+    Begin/Submit/Wait return typed Result. Submit failure preserves VkResult and
+    invalidates the consumed recording without returning a ready ticket.
+    Timeline regression, wrong QueueId, and undeclared waits are rejected.
+
+Threading and timing constraints:
+
+    pool is thread-confined; ticket queries are thread-safe; submissions serialized per Vulkan queue; no CPU wait in normal frame path
+
+Dependencies:
+
+    - VulkanRuntime.
+    - DebugDiagnostics.
+
+Tests:
+
+    - submit dependency chain.
+    - cross-queue wait.
+    - abandoned recording recycle.
+    - timeout.
+    - device-lost propagation.
+    - timeline rollover policy.
+
+Implementation rules:
+
+    - Keep implementation-only types out of public headers.
+    - Use RAII and generational IDs; do not expose owning raw pointers.
+    - Validate descriptions before allocating or mutating state.
+    - Publish complete snapshots/generations rather than partially updated data.
+    - Add diagnostics for failure context without making logging a dependency
+      of correctness.
+
+Canonical integration contract:
+
+    Normative queue/timeline owner. FrameManager supplies FrameSlotId but
+    scheduler has no FrameManager dependency. RenderGraph supplies the compiled
+    submission DAG, stage masks, and queue transfers. Scheduler serializes
+    access per VkQueue; recording pools are thread/slot confined. Host/queue/
+    device waits are forbidden in P15-P16 except bounded shutdown/recovery.
+
+    See ..\CANONICAL_CONVENTIONS.txt, 20_frame_manager.txt,
+    ..\rendering\03_render_graph.txt, and
+    ..\OWNERSHIP_LIFETIME_SHUTDOWN.txt.

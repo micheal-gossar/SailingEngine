@@ -1,0 +1,83 @@
+NETWORK REPLICATION PREP CLASS DESIGN
+=====================================
+
+Class:
+
+    NetworkReplicationModel
+
+Purpose:
+
+    Define stable network identities, snapshots, input commands, and reconciliation boundaries without requiring transport.
+
+Public API:
+
+    Assign(NetEntityId,entity);
+    Remove(id);
+    BuildSnapshot(tick,interest)->Snapshot;
+    ApplySnapshot(snapshot);
+    EncodeCommand(command);
+    DecodeCommand(bytes);
+    ValidateSchema(peerHash);
+
+Internal state and components:
+
+    - net ID map.
+    - replicated component schema/version hashes.
+    - quantizers.
+    - snapshot baselines.
+    - input sequence/ack state.
+    - interest records.
+
+Lifecycle and ownership:
+
+    model owns mappings and baseline history with bounded window; packets own serialized bytes; EntityRegistry remains authority
+
+Error behavior:
+
+    Invalid/malformed/unbounded bytes, schema/version/epoch mismatch, stale
+    snapshot/sequence/NetEntityId, quantization, and capacity return
+    ReplicationError before live-state mutation.
+
+Threading and timing constraints:
+
+    called at fixed tick boundary; serialization jobs use immutable snapshots; inbound data validated before command queue; no wall-clock authority
+
+Dependencies:
+
+    - EntityRegistry.
+    - Immutable replication snapshots and TickId values.
+    - SchemaSerialization.
+    - GameplayCommandBus consumes validated inbound command envelopes; no
+      reverse bus dependency.
+
+Tests:
+
+    - round-trip.
+    - quantization bounds.
+    - unknown fields/version.
+    - stale snapshot.
+    - ID reuse protection.
+    - malformed packet.
+    - deterministic ordering.
+
+Implementation rules:
+
+    - Keep implementation-only types out of public headers.
+    - Use RAII and generational IDs; do not expose owning raw pointers.
+    - Validate descriptions before allocating or mutating state.
+    - Publish complete snapshots/generations rather than partially updated data.
+    - Add diagnostics for failure context without making logging a dependency
+      of correctness.
+
+Canonical integration contract:
+
+    Conceptual transport-independent model, optional for single-player.
+    NetEntityId and PersistentEntityId are stable typed domains; EntityId is
+    resolved and generation checked locally. P11 builds immutable snapshots;
+    inbound data is bounded/decoded/validated off-thread and only then enqueued
+    for P2 authority. It never applies snapshots from a network thread.
+
+    Ocean replication uses epoch/inputs/checksums/corrections from
+    ..\ocean\85_ocean_streaming_persistence.txt, never GPU textures. No wall
+    clock/render delta/readback becomes authority. See
+    ..\CANONICAL_CONVENTIONS.txt and ..\gameplay\59_gameplay_command_bus.txt.

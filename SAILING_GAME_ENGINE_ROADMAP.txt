@@ -1,0 +1,1870 @@
+VULKAN SAILING GAME ENGINE - DETAILED IMPLEMENTATION ROADMAP
+=============================================================
+
+Purpose
+-------
+This document describes the systems, implementation order, validation steps,
+and production tooling needed to build a C++20 Vulkan game engine for a sailing
+game. It is written for the current project, which already uses CMake, Vulkan,
+Vulkan-Hpp, GLFW, and GLM.
+
+Technical assumptions:
+
+1. Use C++20.
+2. Support Windows first while keeping platform-specific code isolated.
+3. Use Vulkan as the graphics API.
+4. Use GLFW for window creation, Vulkan surfaces, and desktop input.
+5. Use GLM for vector, matrix, and quaternion math.
+6. Use CMake and Ninja for configuration and builds.
+7. Run gameplay simulation at a fixed time step.
+8. Keep rendering interpolation separate from authoritative simulation.
+9. Start with a single-player architecture while keeping gameplay commands and
+   state serializable for possible networking.
+10. Use real-time approximations for ocean and fluid behavior instead of
+    computational fluid dynamics.
+
+
+PART 1 - DEFINE TECHNICAL REQUIREMENTS
+=====================================
+
+1.1 Establish supported configurations
+--------------------------------------
+[*] Define the minimum Vulkan API version.
+[ ] Define required Vulkan instance extensions.
+[ ] Define required Vulkan device extensions.
+[ ] Define required physical-device features.
+[ ] Define optional features with fallback paths.
+[ ] Define supported compilers and minimum versions.
+[ ] Define Debug, RelWithDebInfo, and Release configurations.
+[ ] Define x64 as the initial target architecture.
+[ ] Define the initial render resolution and resizing behavior.
+[ ] Define the target fixed simulation frequency.
+[ ] Define the target frame-time budget.
+[ ] Define CPU and GPU memory budgets.
+[ ] Define maximum expected entity, vessel, light, and particle counts.
+
+1.2 Establish engineering boundaries
+------------------------------------
+[ ] Keep platform code behind narrow interfaces.
+[ ] Keep Vulkan types out of gameplay systems.
+[ ] Keep renderer ownership separate from world and gameplay ownership.
+[ ] Keep physics state independent from render transforms.
+[ ] Keep asset source formats separate from runtime formats.
+[ ] Make save data versioned and independent from in-memory object layouts.
+[ ] Do not add multiplayer code until the fixed-step command model is stable.
+[ ] Do not add GPU-driven rendering until CPU profiling shows it is needed.
+[ ] Do not add an FFT ocean until Gerstner waves are implemented and measured.
+[ ] Do not build a custom general-purpose scripting language.
+[ ] Require each subsystem to expose a testable interface.
+[ ] Require every asynchronous operation to have explicit ownership,
+    cancellation, completion, and error behavior.
+
+
+PART 2 - STABILIZE THE PROJECT FOUNDATION
+=========================================
+
+2.1 Establish source ownership and object lifetimes
+---------------------------------------------------
+[ ] Make App the top-level owner of long-lived game systems.
+[ ] Make Window own exactly one GLFWwindow pointer.
+[ ] Make Renderer receive a Window reference; do not let Renderer own a second
+    Window instance.
+[ ] Remove circular header inclusion.
+[ ] Keep common.h limited to stable, genuinely common declarations.
+[ ] Prefer forward declarations over including large headers.
+[ ] Make Vulkan handles private members of Renderer or smaller Vulkan wrapper
+    classes.
+[ ] Choose either Vulkan-Hpp RAII handles or explicit vk::* handles and use the
+    choice consistently.
+[ ] If using Vulkan-Hpp RAII:
+    [ ] Create vk::raii::Context first.
+    [ ] Store vk::raii::Instance.
+    [ ] Store vk::raii::DebugUtilsMessengerEXT.
+    [ ] Store vk::raii::SurfaceKHR.
+    [ ] Store vk::raii::PhysicalDevice.
+    [ ] Store vk::raii::Device.
+    [ ] Let destructors enforce reverse destruction order.
+[ ] If using explicit handles:
+    [ ] Initialize every handle to null.
+    [ ] Destroy resources in strict reverse creation order.
+    [ ] Make cleanup safe after partial initialization.
+    [ ] Never copy an owning wrapper.
+    [ ] Add move constructors and move assignment where ownership transfer is
+        needed.
+
+2.2 Adopt a clear folder structure
+----------------------------------
+[ ] Move toward a structure similar to:
+
+    header/
+      Core/
+        app.h
+        window.h
+        input.h
+        log.h
+        timer.h
+      Renderer/
+        renderer.h
+        vulkan_context.h
+        swapchain.h
+        render_graph.h
+        buffer.h
+        image.h
+        descriptor_allocator.h
+        pipeline.h
+        shader.h
+      World/
+        world.h
+        terrain.h
+        ocean.h
+        weather.h
+      Sailing/
+        vessel.h
+        sail.h
+        hull.h
+        buoyancy.h
+      Gameplay/
+        player_controller.h
+        mission.h
+        inventory.h
+      Assets/
+        asset_manager.h
+        mesh.h
+        material.h
+        texture.h
+      UI/
+        ui_system.h
+    src/
+      Matching implementation folders.
+    assets/
+      models/
+      textures/
+      shaders/
+      audio/
+      data/
+    tools/
+      asset_cooker/
+      shader_compiler/
+    tests/
+
+2.3 Improve CMake configuration
+-------------------------------
+[ ] Rename the executable target from vulkan_device_test to the game name.
+[ ] Keep C++20 required.
+[ ] Keep CMAKE_EXPORT_COMPILE_COMMANDS enabled.
+[ ] Add Debug, RelWithDebInfo, and Release build configurations.
+[ ] Define DEBUG or a project-specific debug macro only in debug builds.
+[ ] Add a compile-time option for Vulkan validation.
+[ ] Add a compile-time option for GPU markers.
+[ ] Add a compile-time option for sanitizers where supported.
+[ ] Add shader compilation as a CMake build step.
+[ ] Track shader source files as target sources for IDE visibility.
+[ ] Copy or install runtime assets next to the executable.
+[ ] Add warnings-as-errors only after the warning baseline is clean.
+[ ] Add separate engine and game libraries if build times or testing require it.
+[ ] Avoid recursive source globbing in a mature project; list production source
+    files explicitly so accidental files do not silently enter the build.
+
+2.4 Add foundational utilities
+------------------------------
+[ ] Logging:
+    [ ] Severity levels: trace, debug, info, warning, error, fatal.
+    [ ] Timestamp.
+    [ ] Source subsystem.
+    [ ] Console output.
+    [ ] Log-file output.
+    [ ] Thread-safe writes.
+    [ ] Vulkan validation callback integration.
+[ ] Assertions:
+    [ ] Debug assertion for programmer errors.
+    [ ] Runtime error reporting for recoverable failures.
+    [ ] Fatal error path with a useful message.
+[ ] Timing:
+    [ ] Monotonic clock.
+    [ ] Per-frame delta time.
+    [ ] Fixed simulation time step.
+    [ ] Frame-time smoothing for UI.
+[ ] Configuration:
+    [ ] Development defaults.
+    [ ] User graphics settings.
+    [ ] Input bindings.
+    [ ] Audio settings.
+    [ ] Safe parsing with explicit errors.
+[ ] File system:
+    [ ] Executable directory.
+    [ ] Asset directory.
+    [ ] User settings directory.
+    [ ] Save-game directory.
+    [ ] Path normalization.
+[ ] Unique identifiers for assets and entities.
+[ ] CPU profiler scopes.
+[ ] GPU debug labels and timestamp queries.
+
+
+PART 3 - WINDOW, INPUT, AND APPLICATION LOOP
+============================================
+
+3.1 Window system
+-----------------
+[ ] Initialize GLFW once.
+[ ] Request GLFW_NO_API so GLFW does not create an OpenGL context.
+[ ] Create a resizable window.
+[ ] Store framebuffer dimensions separately from logical window dimensions.
+[ ] Register callbacks for:
+    [ ] Framebuffer resize.
+    [ ] Key input.
+    [ ] Mouse buttons.
+    [ ] Cursor movement.
+    [ ] Scroll wheel.
+    [ ] Character input.
+    [ ] Window focus.
+    [ ] File drop, if useful for development.
+[ ] Handle minimized windows where framebuffer width or height is zero.
+[ ] Expose required Vulkan instance extensions from GLFW.
+[ ] Provide a method that creates VkSurfaceKHR for the active Vulkan instance.
+[ ] Shut GLFW down after the window is destroyed.
+
+3.2 Input system
+----------------
+[ ] Separate raw device input from gameplay actions.
+[ ] Record current and previous state for digital inputs.
+[ ] Expose pressed, held, and released queries.
+[ ] Accumulate mouse delta per frame.
+[ ] Support analog action values.
+[ ] Define actions instead of hard-coding keys:
+    [ ] SteerLeft.
+    [ ] SteerRight.
+    [ ] SailIn.
+    [ ] SailOut.
+    [ ] RaiseSail.
+    [ ] LowerSail.
+    [ ] DropAnchor.
+    [ ] ToggleCamera.
+    [ ] LookHorizontal.
+    [ ] LookVertical.
+    [ ] Pause.
+[ ] Add keyboard and mouse bindings.
+[ ] Add gamepad bindings.
+[ ] Add dead-zone and response-curve settings.
+[ ] Allow bindings to be changed and persisted.
+[ ] Disable gameplay input while UI text fields or menus consume input.
+
+3.3 Main loop
+-------------
+[ ] Poll platform events.
+[ ] Calculate real elapsed time.
+[ ] Clamp abnormally large frame deltas after pauses or breakpoints.
+[ ] Accumulate time for a fixed simulation update.
+[ ] Run zero or more fixed updates:
+    [ ] Read buffered commands.
+    [ ] Update weather.
+    [ ] Update sailing physics.
+    [ ] Update AI.
+    [ ] Resolve collisions.
+    [ ] Update gameplay state.
+[ ] Calculate interpolation alpha between fixed simulation states.
+[ ] Update non-simulation presentation:
+    [ ] Camera.
+    [ ] Animation.
+    [ ] Audio listener.
+    [ ] UI.
+[ ] Build and submit the frame.
+[ ] Present the swapchain image.
+[ ] Limit catch-up updates to prevent a spiral of death.
+[ ] Define behavior when the app loses focus.
+[ ] Exit cleanly after a close request.
+
+
+PART 4 - VULKAN BOOTSTRAP
+=========================
+
+4.1 Instance creation
+---------------------
+[ ] Fill vk::ApplicationInfo with:
+    [ ] Application name.
+    [ ] Application version.
+    [ ] Engine name.
+    [ ] Engine version.
+    [ ] Requested Vulkan API version.
+[ ] Prefer Vulkan 1.3 as a practical baseline unless Vulkan 1.4 is a firm
+    hardware requirement.
+[ ] Enumerate available instance layers.
+[ ] Enumerate available instance extensions.
+[ ] Request GLFW-required instance extensions.
+[ ] In debug builds, request VK_EXT_debug_utils.
+[ ] Enable VK_LAYER_KHRONOS_validation when installed and requested.
+[ ] Fail with an explicit message when required extensions are missing.
+[ ] Create the Vulkan instance.
+[ ] Load instance-level dispatch functions if required by the chosen
+    Vulkan-Hpp dispatch mode.
+
+4.2 Validation and debugging
+----------------------------
+[ ] Create a debug messenger immediately after instance creation.
+[ ] Capture validation severity and type.
+[ ] Route validation output through the engine logger.
+[ ] Include object names in validation output where possible.
+[ ] Add debug names to:
+    [ ] Queues.
+    [ ] Command pools.
+    [ ] Command buffers.
+    [ ] Buffers.
+    [ ] Images.
+    [ ] Image views.
+    [ ] Samplers.
+    [ ] Pipelines.
+    [ ] Pipeline layouts.
+    [ ] Descriptor sets.
+    [ ] Semaphores.
+    [ ] Fences.
+[ ] Treat validation errors as defects.
+[ ] Keep validation warnings visible and periodically reduce them to zero.
+
+4.3 Surface and physical-device selection
+-----------------------------------------
+[ ] Create the GLFW Vulkan surface.
+[ ] Enumerate physical devices.
+[ ] For each physical device, query:
+    [ ] Device properties.
+    [ ] Device features.
+    [ ] Vulkan 1.1/1.2/1.3 feature structures.
+    [ ] Memory properties.
+    [ ] Queue-family properties.
+    [ ] Device extensions.
+    [ ] Surface formats.
+    [ ] Present modes.
+    [ ] Surface capabilities.
+[ ] Require:
+    [ ] Graphics queue support.
+    [ ] Presentation support.
+    [ ] VK_KHR_swapchain.
+    [ ] A usable surface format.
+    [ ] A usable present mode.
+[ ] Strongly prefer:
+    [ ] Discrete GPU.
+    [ ] Dedicated transfer queue.
+    [ ] Dedicated compute queue.
+    [ ] Sampler anisotropy.
+    [ ] Timeline semaphores.
+    [ ] Synchronization2.
+    [ ] Dynamic rendering.
+    [ ] Descriptor indexing, if the material design uses it.
+[ ] Score compatible devices.
+[ ] Print the selected GPU and driver information.
+[ ] Store limits such as maximum image dimensions and uniform-buffer
+    alignment.
+
+4.4 Logical device and queues
+-----------------------------
+[ ] Select queue families for:
+    [ ] Graphics.
+    [ ] Presentation.
+    [ ] Compute.
+    [ ] Transfer.
+[ ] Deduplicate queue-family creation requests.
+[ ] Enable only features that were queried and confirmed.
+[ ] Create the logical device.
+[ ] Retrieve queue handles.
+[ ] Create one command pool per queue family and per worker thread where
+    parallel recording is used.
+[ ] Prefer transient command pools for short-lived upload commands.
+
+4.5 Memory allocation
+---------------------
+[ ] Use Vulkan Memory Allocator (VMA) unless writing an allocator is an explicit
+    learning goal.
+[ ] Create the allocator from the instance, physical device, and device.
+[ ] Support:
+    [ ] GPU-only buffers.
+    [ ] CPU-to-GPU upload buffers.
+    [ ] GPU-to-CPU readback buffers.
+    [ ] GPU-only images.
+[ ] Respect memory alignment.
+[ ] Flush non-coherent mapped memory.
+[ ] Invalidate non-coherent readback memory.
+[ ] Track allocation names and sizes.
+[ ] Report total and per-heap memory usage.
+[ ] Define a memory budget policy before exhaustion.
+
+
+PART 5 - SWAPCHAIN AND FRAME EXECUTION
+=====================================
+
+5.1 Swapchain
+-------------
+[ ] Query surface capabilities every time the swapchain is recreated.
+[ ] Choose an sRGB surface format.
+[ ] Prefer mailbox presentation when available for low-latency uncapped
+    rendering.
+[ ] Use FIFO as the guaranteed VSync mode.
+[ ] Clamp the requested image count to surface limits.
+[ ] Choose the swap extent from current framebuffer dimensions.
+[ ] Select exclusive or concurrent sharing based on graphics/present queues.
+[ ] Create one image view per swapchain image.
+[ ] Create a depth image and view.
+[ ] Select a supported depth format.
+[ ] Add a stencil aspect only when the depth format contains stencil.
+[ ] Recreate all size-dependent render targets after a resize.
+[ ] Defer recreation while minimized.
+[ ] Correctly handle VK_ERROR_OUT_OF_DATE_KHR.
+[ ] Correctly handle VK_SUBOPTIMAL_KHR.
+[ ] Destroy old swapchain resources only after the GPU no longer uses them.
+
+5.2 Frames in flight
+--------------------
+[ ] Start with two frames in flight.
+[ ] For each frame, own:
+    [ ] Command pool.
+    [ ] Primary command buffer.
+    [ ] Image-available semaphore.
+    [ ] Render-finished semaphore.
+    [ ] In-flight fence or timeline value.
+    [ ] Per-frame upload allocator.
+    [ ] Per-frame descriptor allocator.
+    [ ] Per-frame uniform data.
+[ ] Wait only for the frame slot being reused.
+[ ] Acquire the next swapchain image.
+[ ] Reset frame-local resources.
+[ ] Record commands.
+[ ] Submit using synchronization2 where available.
+[ ] Present.
+[ ] Track which frame owns each swapchain image if fences are used.
+[ ] Avoid vkDeviceWaitIdle during normal rendering.
+
+5.3 Resource synchronization
+----------------------------
+[ ] Define which queue owns every resource.
+[ ] Track image layouts.
+[ ] Use precise pipeline stages and access masks.
+[ ] Add barriers for:
+    [ ] Upload completion before shader reads.
+    [ ] Compute writes before graphics reads.
+    [ ] Color attachment writes before post-processing reads.
+    [ ] Depth writes before depth sampling.
+    [ ] Swapchain transition to color attachment.
+    [ ] Swapchain transition to presentation.
+[ ] Use timeline semaphores for cross-queue scheduling if multiple queues are
+    used.
+[ ] Validate synchronization with the synchronization validation feature.
+
+
+PART 6 - CORE RENDERING ARCHITECTURE
+====================================
+
+6.1 GPU resource wrappers
+-------------------------
+[ ] Buffer wrapper:
+    [ ] Handle.
+    [ ] Allocation.
+    [ ] Size.
+    [ ] Usage flags.
+    [ ] Mapped pointer when applicable.
+    [ ] Debug name.
+[ ] Image wrapper:
+    [ ] Image.
+    [ ] Allocation.
+    [ ] Image view.
+    [ ] Format.
+    [ ] Extent.
+    [ ] Mip count.
+    [ ] Layer count.
+    [ ] Current layout tracking policy.
+[ ] Sampler cache keyed by sampler configuration.
+[ ] Pipeline wrapper.
+[ ] Pipeline-layout wrapper.
+[ ] Descriptor-set-layout cache.
+[ ] Deferred-deletion queue keyed by completed frame/timeline value.
+[ ] Make owning wrappers move-only.
+
+6.2 Shader system
+-----------------
+[ ] Choose GLSL or HLSL as the shader source language.
+[ ] Compile shaders to SPIR-V during the build.
+[ ] Produce compiler errors with file and line information.
+[ ] Support include files for shared shader code.
+[ ] Generate dependency information so included shader changes trigger rebuilds.
+[ ] Reflect SPIR-V to obtain:
+    [ ] Descriptor bindings.
+    [ ] Push-constant ranges.
+    [ ] Vertex inputs.
+    [ ] Specialization constants.
+[ ] Validate reflected layouts against CPU structures.
+[ ] Add shader hot reload for development.
+[ ] Preserve the old working pipeline when hot reload fails.
+[ ] Cache pipeline binaries when practical.
+
+6.3 Descriptor strategy
+-----------------------
+[ ] Define descriptor set conventions, for example:
+    [ ] Set 0: frame/view data.
+    [ ] Set 1: scene lighting and environment.
+    [ ] Set 2: material textures and constants.
+    [ ] Set 3: object or draw data.
+[ ] Decide between:
+    [ ] Traditional per-material descriptor sets.
+    [ ] Bindless descriptor indexing.
+[ ] Start with traditional descriptors if simplicity matters most.
+[ ] Use per-frame descriptor pools for transient descriptors.
+[ ] Use persistent pools for long-lived material descriptors.
+[ ] Avoid updating descriptor sets while the GPU may use them.
+[ ] Use dynamic uniform offsets only when alignment and batching are handled.
+
+6.4 Render graph or explicit pass scheduler
+-------------------------------------------
+[ ] Define each render pass by:
+    [ ] Input resources.
+    [ ] Output resources.
+    [ ] Read/write access.
+    [ ] Required formats.
+    [ ] Resolution.
+    [ ] Queue.
+[ ] Build execution order from dependencies.
+[ ] Generate image transitions and buffer barriers.
+[ ] Reuse compatible transient images.
+[ ] Make passes easy to disable for debugging.
+[ ] Initial pass list:
+    1. Shadow maps.
+    2. Depth prepass, if justified.
+    3. Opaque terrain and ships.
+    4. Sky/atmosphere.
+    5. Ocean.
+    6. Transparent objects and particles.
+    7. Post-processing.
+    8. UI.
+    9. Present.
+
+6.5 Camera and view data
+------------------------
+[ ] Implement transform with position, orientation, and scale.
+[ ] Implement perspective projection using Vulkan's depth convention.
+[ ] Correct the GLM projection Y direction when required.
+[ ] Support reverse-Z for improved depth precision.
+[ ] Store:
+    [ ] View matrix.
+    [ ] Projection matrix.
+    [ ] View-projection matrix.
+    [ ] Previous view-projection matrix.
+    [ ] Inverse matrices.
+    [ ] Camera world position.
+    [ ] Near/far values.
+    [ ] Jitter for temporal anti-aliasing.
+[ ] Implement frustum extraction.
+[ ] Implement third-person orbit/chase behavior.
+[ ] Add collision-aware camera placement.
+[ ] Smooth position and rotation without adding excessive input lag.
+
+6.6 Mesh rendering
+------------------
+[ ] Define packed vertex formats.
+[ ] Support:
+    [ ] Position.
+    [ ] Normal.
+    [ ] Tangent.
+    [ ] UV.
+    [ ] Vertex color when needed.
+    [ ] Joint indices and weights for animated meshes.
+[ ] Upload vertex and index buffers through staging buffers.
+[ ] Use indexed drawing.
+[ ] Group draws by pipeline and material.
+[ ] Add per-object transform data.
+[ ] Add CPU frustum culling first.
+[ ] Add GPU culling and indirect drawing only when profiling justifies it.
+[ ] Support multiple levels of detail.
+
+6.7 Physically based materials
+------------------------------
+[ ] Use a metallic/roughness PBR workflow.
+[ ] Material properties:
+    [ ] Base color.
+    [ ] Normal map.
+    [ ] Metallic.
+    [ ] Roughness.
+    [ ] Ambient occlusion.
+    [ ] Emissive.
+    [ ] Alpha mode.
+    [ ] Double-sided flag.
+[ ] Correctly convert sRGB textures to linear space.
+[ ] Keep normal, roughness, metallic, and data maps in linear space.
+[ ] Add environment lighting.
+[ ] Add a BRDF integration lookup texture.
+[ ] Add irradiance and prefiltered reflection maps, or an atmospheric
+    equivalent.
+[ ] Provide specialized wetness parameters for decks, rocks, and hulls.
+
+6.8 Lighting and shadows
+------------------------
+[ ] Implement a directional sun light.
+[ ] Implement cascaded shadow maps for large outdoor views.
+[ ] Stabilize cascades to reduce shimmering.
+[ ] Select cascade splits based on camera range and scene scale.
+[ ] Add shadow bias controls.
+[ ] Add filtered shadow sampling.
+[ ] Add local point/spot lights for ports and ships.
+[ ] Use clustered or tiled lighting only when many local lights are needed.
+[ ] Make moonlight a separate artistic/environmental configuration.
+
+
+PART 7 - OCEAN RENDERING
+========================
+
+7.1 Choose an ocean model
+-------------------------
+[ ] Start with a layered Gerstner-wave model for the first playable.
+[ ] Use the same wave function on CPU and GPU.
+[ ] Upgrade to an FFT spectral ocean only if the visual target and hardware
+    budget require it.
+[ ] Define wave parameters:
+    [ ] Direction.
+    [ ] Wavelength.
+    [ ] Amplitude.
+    [ ] Steepness.
+    [ ] Phase speed.
+    [ ] Wind coupling.
+[ ] Use several large swells plus smaller waves.
+[ ] Seed wave sets deterministically for repeatable simulation.
+[ ] Limit steepness to avoid self-intersection.
+
+7.2 Ocean geometry
+------------------
+[ ] Center ocean geometry around the camera.
+[ ] Use projected-grid, clipmap, or concentric-ring geometry.
+[ ] Increase tessellation close to the camera.
+[ ] Reduce tessellation in the distance.
+[ ] Hide grid transitions.
+[ ] Maintain a stable horizon.
+[ ] Use camera-relative coordinates to reduce floating-point jitter.
+[ ] Displace vertices from the shared wave function.
+[ ] Derive analytic normals and tangents from wave derivatives.
+
+7.3 Ocean shading
+-----------------
+[ ] Implement Fresnel reflection.
+[ ] Refract or approximate the scene color below water.
+[ ] Apply depth-dependent absorption:
+    [ ] Red disappears first.
+    [ ] Green disappears next.
+    [ ] Blue penetrates farther.
+[ ] Add depth-dependent scattering.
+[ ] Reflect sky and sun.
+[ ] Add sun glitter from the microfacet BRDF.
+[ ] Blend small normal maps at multiple scales.
+[ ] Scroll normal layers in wind-dependent directions.
+[ ] Add foam from:
+    [ ] Wave crest steepness.
+    [ ] Shoreline intersection.
+    [ ] Hull wake.
+    [ ] Propeller turbulence, if motorized craft exist.
+[ ] Add distance-based roughness and normal filtering to reduce shimmer.
+[ ] Add underwater fog and color grading.
+[ ] Handle the camera crossing the water surface without visual discontinuity.
+
+7.4 Shore interaction
+---------------------
+[ ] Provide terrain or bathymetry depth to the ocean shader.
+[ ] Fade water color in shallow regions.
+[ ] Generate shoreline foam based on water depth and wave motion.
+[ ] Add wet sand/rock darkening.
+[ ] Add wave breaking in shallow water as an approximation.
+[ ] Place spray particles where strong waves hit cliffs or hulls.
+
+7.5 Ocean queries for gameplay and physics
+------------------------------------------
+[ ] Implement a CPU function returning:
+    [ ] Water height at world X/Z and simulation time.
+    [ ] Surface normal.
+    [ ] Water velocity.
+    [ ] Optional crest/foam factor.
+[ ] Ensure CPU parameters exactly match the GPU wave parameters.
+[ ] Unit-test wave height and derivatives.
+[ ] Batch queries for hull sample points.
+[ ] Keep the ocean simulation clock fixed-step and deterministic.
+
+
+PART 8 - SHIP PHYSICS AND SAILING MODEL
+=======================================
+
+8.1 Rigid-body foundation
+-------------------------
+[ ] Decide whether to integrate a physics library or implement specialized ship
+    dynamics.
+[ ] A practical option is a general rigid-body library plus custom buoyancy and
+    sail forces.
+[ ] Represent vessel state:
+    [ ] Position.
+    [ ] Orientation quaternion.
+    [ ] Linear velocity.
+    [ ] Angular velocity.
+    [ ] Mass.
+    [ ] Center of mass.
+    [ ] Inertia tensor.
+    [ ] Accumulated force.
+    [ ] Accumulated torque.
+[ ] Use a fixed simulation step.
+[ ] Use semi-implicit Euler or a more stable integrator.
+[ ] Apply forces at positions to generate torque.
+[ ] Transform between local and world space correctly.
+[ ] Clamp or stabilize only when physically justified.
+
+8.2 Buoyancy
+------------
+[ ] Approximate the submerged hull using:
+    [ ] Multiple buoyancy sample points for the first version, or
+    [ ] Submerged triangle integration for higher accuracy.
+[ ] At each sample point:
+    1. Query water height and normal.
+    2. Calculate immersion depth.
+    3. Apply upward buoyant force proportional to displaced volume.
+    4. Apply water damping based on point velocity relative to water.
+    5. Apply the force at the sample point.
+[ ] Tune sample placement to represent bow, stern, port, and starboard volume.
+[ ] Ensure the total buoyancy near equilibrium balances vessel weight.
+[ ] Model center of buoyancy movement as the ship heels.
+[ ] Test:
+    [ ] Stable rest in flat water.
+    [ ] Roll recovery.
+    [ ] Pitch recovery.
+    [ ] Response to a traveling wave.
+    [ ] Added cargo mass.
+    [ ] Off-center cargo.
+
+8.3 Hydrodynamic resistance
+---------------------------
+[ ] Compute water-relative velocity.
+[ ] Decompose velocity into hull-forward, sideways, and vertical components.
+[ ] Apply low forward drag.
+[ ] Apply strong lateral resistance to represent the keel.
+[ ] Apply angular damping for roll, pitch, and yaw.
+[ ] Increase drag with submerged area and speed squared.
+[ ] Avoid arbitrary velocity assignment; use forces.
+[ ] Add planing behavior only for hulls and speeds that require it.
+[ ] Model grounding as contact forces plus hull damage.
+
+8.4 Rudder and steering
+-----------------------
+[ ] Define rudder position and area.
+[ ] Rotate rudder angle from helm input.
+[ ] Calculate water flow at the rudder.
+[ ] Produce lift roughly perpendicular to local flow.
+[ ] Reduce authority at very low speed.
+[ ] Allow reverse flow to reverse steering behavior where appropriate.
+[ ] Apply force at the rudder location to generate yaw torque.
+[ ] Clamp stall behavior at extreme rudder angles.
+[ ] Add rudder response speed rather than instant angle changes.
+
+8.5 Wind model
+--------------
+[ ] Represent global weather wind as a velocity vector.
+[ ] Add gusts with smoothly varying noise.
+[ ] Add altitude and terrain effects only if required.
+[ ] Calculate apparent wind:
+
+    apparentWind = trueWind - vesselVelocity
+
+[ ] Transform apparent wind into ship-local space.
+[ ] Expose apparent wind direction and speed to:
+    [ ] Sail physics.
+    [ ] Sail animation.
+    [ ] UI instruments.
+    [ ] Audio.
+    [ ] Particles and flags.
+
+8.6 Sail aerodynamics
+---------------------
+[ ] Represent each sail with:
+    [ ] Area.
+    [ ] Mast/attachment transform.
+    [ ] Center of effort.
+    [ ] Trim angle.
+    [ ] Reefing/raised fraction.
+    [ ] Lift coefficient curve.
+    [ ] Drag coefficient curve.
+[ ] Calculate angle of attack from apparent wind and sail orientation.
+[ ] Calculate dynamic pressure from air density and apparent wind speed.
+[ ] Calculate lift and drag magnitudes.
+[ ] Apply lift perpendicular to apparent wind.
+[ ] Apply drag along apparent wind.
+[ ] Apply the combined force at the sail's center of effort.
+[ ] Generate heel and yaw naturally from force position.
+[ ] Model luffing when trim is poor.
+[ ] Reduce force when reefed or damaged.
+[ ] Add different curves for square and fore-and-aft rigs.
+[ ] Validate points of sail:
+    [ ] In irons/no-go zone.
+    [ ] Close-hauled.
+    [ ] Beam reach.
+    [ ] Broad reach.
+    [ ] Running downwind.
+[ ] Tune for readable, enjoyable control before strict realism.
+
+8.7 Stability, damage, and capsize
+----------------------------------
+[ ] Define maximum safe heel angle.
+[ ] Shift effective crew or ballast mass when gameplay supports it.
+[ ] Allow sail force to overpower righting moment.
+[ ] Detect flooding points below water.
+[ ] Track water ingress by compartment.
+[ ] Increase mass and alter center of mass as flooding progresses.
+[ ] Apply mast, sail, rudder, and hull damage.
+[ ] Define repair actions and resource costs.
+[ ] Define capsize and sinking states.
+
+8.8 Anchoring and mooring
+-------------------------
+[ ] Track anchor state and chain/rope length.
+[ ] Detect seabed depth.
+[ ] Apply holding force when the anchor reaches the seabed.
+[ ] Limit holding force by seabed type and anchor quality.
+[ ] Allow dragging in extreme wind or current.
+[ ] Add mooring attachment points and constraints at ports.
+
+
+PART 9 - WEATHER, SKY, AND ATMOSPHERE
+=====================================
+
+9.1 Time of day
+---------------
+[ ] Maintain astronomical/game time separately from frame time.
+[ ] Calculate sun direction from time.
+[ ] Calculate moon direction if needed.
+[ ] Drive sky color, sunlight, ambient light, and fog from sun elevation.
+[ ] Support accelerated time while preserving stable simulation.
+[ ] Provide sunrise, day, sunset, night, and dawn transitions.
+
+9.2 Atmosphere and sky
+----------------------
+[ ] Begin with a procedural sky model or precomputed atmosphere lookup tables.
+[ ] Render:
+    [ ] Rayleigh scattering.
+    [ ] Mie scattering.
+    [ ] Sun disk.
+    [ ] Horizon haze.
+    [ ] Stars.
+    [ ] Moon.
+[ ] Generate image-based lighting data from the current sky when feasible.
+[ ] Match ocean reflection to the visible sky.
+
+9.3 Clouds
+----------
+[ ] Start with layered cloud textures or billboard volumes.
+[ ] Upgrade to volumetric ray-marched clouds only when budget permits.
+[ ] Move clouds with high-altitude wind.
+[ ] Cast approximate cloud shadows on ocean and terrain.
+[ ] Vary density with weather state.
+[ ] Avoid temporal flicker using reprojection and stable noise.
+
+9.4 Weather state machine
+-------------------------
+[ ] Define weather presets:
+    [ ] Clear.
+    [ ] Overcast.
+    [ ] Fog.
+    [ ] Light rain.
+    [ ] Heavy rain.
+    [ ] Storm.
+[ ] Each preset controls:
+    [ ] Wind direction.
+    [ ] Wind speed.
+    [ ] Gust strength.
+    [ ] Wave spectrum.
+    [ ] Cloud coverage.
+    [ ] Precipitation.
+    [ ] Fog density.
+    [ ] Sun visibility.
+    [ ] Lightning probability.
+[ ] Blend gradually between presets.
+[ ] Make transitions deterministic from a weather seed where needed.
+[ ] Warn the player of changing weather through clouds, pressure, waves, and
+    instruments.
+
+9.5 Storm effects
+-----------------
+[ ] Increase wave amplitude and short-wave roughness.
+[ ] Increase gust magnitude and frequency.
+[ ] Add rain particles and screen droplets cautiously.
+[ ] Add lightning flashes and delayed thunder.
+[ ] Add stronger ship creaking and sail audio.
+[ ] Reduce visibility.
+[ ] Increase sail and mast damage risk.
+[ ] Keep all effects readable and avoid overwhelming the player.
+
+
+PART 10 - WORLD, TERRAIN, AND STREAMING
+======================================
+
+10.1 World coordinate strategy
+------------------------------
+[ ] Choose world units; one unit should normally equal one meter.
+[ ] Use double precision for authoritative large-world positions if travel
+    distances become large.
+[ ] Use camera-relative float positions for GPU rendering.
+[ ] Implement origin rebasing if needed.
+[ ] Keep physics, audio, particles, and rendering synchronized during rebasing.
+
+10.2 Island and seabed data
+---------------------------
+[ ] Store terrain height.
+[ ] Store bathymetry/seabed depth.
+[ ] Store material masks:
+    [ ] Sand.
+    [ ] Grass.
+    [ ] Rock.
+    [ ] Mud.
+    [ ] Snow, if applicable.
+[ ] Store navigation collision data.
+[ ] Generate coastline data.
+[ ] Generate harbor and mooring metadata.
+[ ] Generate shallow-water hazard data.
+
+10.3 Terrain rendering
+----------------------
+[ ] Use terrain chunks or clipmaps.
+[ ] Add level-of-detail transitions.
+[ ] Frustum-cull terrain chunks.
+[ ] Add horizon-compatible distant island impostors if needed.
+[ ] Blend terrain materials by slope, height, and authored masks.
+[ ] Add triplanar mapping for steep cliffs.
+[ ] Add vegetation instancing.
+[ ] Add wetness near shorelines.
+[ ] Add terrain shadows.
+
+10.4 World streaming
+--------------------
+[ ] Divide the world into streamable cells.
+[ ] Define cell contents:
+    [ ] Terrain.
+    [ ] Static meshes.
+    [ ] Vegetation.
+    [ ] Ports.
+    [ ] Navigation data.
+    [ ] Ambient audio zones.
+    [ ] Gameplay triggers.
+[ ] Load cells around the player asynchronously.
+[ ] Keep GPU uploads off the simulation-critical path.
+[ ] Maintain a memory budget.
+[ ] Unload distant cells safely after GPU work completes.
+[ ] Keep persistent changes separate from immutable world data.
+[ ] Save only differences from authored world state.
+
+10.5 Collision
+--------------
+[ ] Use simplified collision meshes.
+[ ] Add terrain and seabed collision.
+[ ] Add ship-to-ship collision.
+[ ] Add ship-to-dock collision.
+[ ] Add projectile collision if combat exists.
+[ ] Use broad-phase spatial partitioning.
+[ ] Generate contact impulses without destabilizing buoyancy.
+[ ] Classify collision severity for damage and audio.
+
+
+PART 11 - ASSET PIPELINE
+========================
+
+11.1 Model import
+-----------------
+[ ] Use glTF 2.0 as the primary interchange format.
+[ ] Import:
+    [ ] Meshes.
+    [ ] Materials.
+    [ ] Textures.
+    [ ] Nodes.
+    [ ] Skins.
+    [ ] Animations.
+[ ] Convert source assets to an engine-native cooked format.
+[ ] Validate missing normals, tangents, UVs, and materials.
+[ ] Generate tangents when absent.
+[ ] Generate mesh bounds.
+[ ] Generate mesh LODs.
+[ ] Optimize vertex cache and overdraw.
+[ ] Compress index and vertex data when useful.
+
+11.2 Texture pipeline
+---------------------
+[ ] Classify every texture as color or data.
+[ ] Generate mipmaps.
+[ ] Choose GPU compression:
+    [ ] BC7 for high-quality color.
+    [ ] BC5 for normal maps.
+    [ ] BC4 for single-channel masks.
+    [ ] BC6H for HDR where supported.
+[ ] Preserve correct color space metadata.
+[ ] Limit maximum dimensions by asset category.
+[ ] Support texture streaming if world scope requires it.
+[ ] Include a fallback checkerboard/error texture.
+
+11.3 Material pipeline
+----------------------
+[ ] Define material JSON or binary schema.
+[ ] Assign stable asset IDs.
+[ ] Validate shader/material compatibility during cooking.
+[ ] Pack scalar maps where appropriate.
+[ ] Support material instances that override a parent material.
+[ ] Add special material types:
+    [ ] Ocean.
+    [ ] Sail cloth.
+    [ ] Wet wood.
+    [ ] Terrain.
+    [ ] Foliage.
+    [ ] Sky.
+
+11.4 Ship authoring data
+------------------------
+[ ] Define vessel data outside C++:
+    [ ] Mass.
+    [ ] Center of mass.
+    [ ] Inertia approximation.
+    [ ] Buoyancy sample points or hull volume mesh.
+    [ ] Rudder position and area.
+    [ ] Sail definitions.
+    [ ] Mast transforms.
+    [ ] Camera mounts.
+    [ ] Cargo sockets.
+    [ ] Damage zones.
+    [ ] Audio emitters.
+[ ] Build an in-engine debug view for all ship physics points and vectors.
+[ ] Allow rapid parameter iteration without recompiling.
+
+11.5 Asynchronous asset manager
+-------------------------------
+[ ] Use stable typed handles instead of raw pointers.
+[ ] Track unloaded, loading, ready, and failed states.
+[ ] Deduplicate requests for the same asset.
+[ ] Load and decompress on worker threads.
+[ ] Queue Vulkan uploads to the render thread or transfer queue.
+[ ] Provide fallback assets while loading.
+[ ] Surface load failures explicitly.
+[ ] Reference-count or otherwise track asset lifetime.
+[ ] Delay GPU deletion until in-flight frames are finished.
+
+
+PART 12 - ENTITY AND GAMEPLAY ARCHITECTURE
+=========================================
+
+12.1 Entity model
+-----------------
+[ ] Start with a simple entity/component registry.
+[ ] Avoid building a complex ECS until actual scale requires it.
+[ ] Useful components:
+    [ ] Transform.
+    [ ] Renderable.
+    [ ] RigidBody.
+    [ ] Vessel.
+    [ ] SailPlan.
+    [ ] Health.
+    [ ] Inventory.
+    [ ] AIController.
+    [ ] AudioEmitter.
+    [ ] Light.
+    [ ] ParticleEmitter.
+[ ] Define safe entity creation and destruction points.
+[ ] Use generation counters to detect stale handles.
+
+12.2 Player sailing controller
+------------------------------
+[ ] Convert input actions into vessel commands.
+[ ] Smooth helm and sail-control movement.
+[ ] Display immediate feedback for trim changes.
+[ ] Support assisted sailing mode:
+    [ ] Suggested sail angle.
+    [ ] Auto trim.
+    [ ] Reduced capsize risk.
+    [ ] Navigation hints.
+[ ] Support simulation mode with manual control.
+[ ] Keep control assistance separate from the underlying physics.
+
+12.3 Navigation
+---------------
+[ ] Add compass heading.
+[ ] Add apparent wind indicator.
+[ ] Add map/chart.
+[ ] Add waypoint placement.
+[ ] Add depth indication near hazards.
+[ ] Add optional minimap.
+[ ] Model line of sight and fog of war only if gameplay benefits.
+[ ] Add landmarks and navigation lights.
+[ ] Add currents if they materially affect routes.
+
+12.4 Missions and progression
+-----------------------------
+[ ] Create data-driven mission definitions.
+[ ] Support objectives such as:
+    [ ] Reach location.
+    [ ] Deliver cargo.
+    [ ] Escort vessel.
+    [ ] Race.
+    [ ] Rescue.
+    [ ] Survey.
+    [ ] Defeat or evade enemy.
+[ ] Track objective state.
+[ ] Persist active mission state.
+[ ] Define rewards.
+[ ] Add ship upgrades:
+    [ ] Hull.
+    [ ] Sails.
+    [ ] Rudder.
+    [ ] Cargo capacity.
+    [ ] Navigation instruments.
+[ ] Ensure progression does not invalidate sailing skill.
+
+12.5 Economy and inventory
+--------------------------
+[ ] Define item data.
+[ ] Define cargo mass and volume.
+[ ] Apply cargo mass and placement to vessel physics when appropriate.
+[ ] Define port markets.
+[ ] Define prices and availability.
+[ ] Define repair and resupply costs.
+[ ] Prevent invalid inventory transitions.
+[ ] Persist transactions safely.
+
+12.6 Combat, if included
+------------------------
+[ ] Define weapon mounts and firing arcs.
+[ ] Simulate projectiles consistently with fixed-step physics.
+[ ] Account for ship motion at firing time.
+[ ] Add impact detection.
+[ ] Add hull, sail, mast, and crew damage.
+[ ] Add reload and ammunition systems.
+[ ] Add AI aiming uncertainty.
+[ ] Provide readable audiovisual feedback.
+[ ] Keep combat optional in architecture if it is not part of the first
+    playable.
+
+
+PART 13 - AI
+============
+
+13.1 AI vessel control
+----------------------
+[ ] Give AI the same helm and sail commands available to the player.
+[ ] Do not move AI ships by directly setting transforms.
+[ ] Calculate desired heading toward a route waypoint.
+[ ] Select a viable point of sail.
+[ ] Tack when the destination lies in the no-go zone.
+[ ] Gybe when appropriate.
+[ ] Adjust sail trim for apparent wind.
+[ ] Reduce sail in storms.
+[ ] Avoid shallow water and obstacles.
+[ ] Dock through a specialized low-speed controller.
+
+13.2 Navigation graph
+---------------------
+[ ] Represent safe-water routes.
+[ ] Include minimum depth constraints.
+[ ] Include harbor entrances and docking lanes.
+[ ] Add local collision avoidance around ships and moving hazards.
+[ ] Replan when weather, damage, or obstacles invalidate a route.
+[ ] Keep distant AI on a cheaper simulation level.
+
+13.3 Behavior
+-------------
+[ ] Use a state machine, behavior tree, or utility system.
+[ ] Define states such as:
+    [ ] Idle.
+    [ ] Patrol.
+    [ ] Trade route.
+    [ ] Follow.
+    [ ] Flee.
+    [ ] Pursue.
+    [ ] Attack.
+    [ ] Dock.
+    [ ] Repair.
+[ ] Add perception:
+    [ ] Visual range.
+    [ ] Hearing/event range.
+    [ ] Faction relationships.
+    [ ] Last-known target position.
+[ ] Add debug visualization for current state, route, and steering targets.
+
+
+PART 14 - AUDIO
+===============
+
+14.1 Audio engine
+-----------------
+[ ] Integrate a spatial audio library.
+[ ] Support:
+    [ ] One-shot sounds.
+    [ ] Looping emitters.
+    [ ] Streaming music.
+    [ ] Spatial attenuation.
+    [ ] Doppler where useful.
+    [ ] Mixer buses.
+[ ] Create buses for:
+    [ ] Master.
+    [ ] Music.
+    [ ] Environment.
+    [ ] Ship.
+    [ ] UI.
+    [ ] Voice.
+[ ] Persist volume settings.
+
+14.2 Sailing soundscape
+-----------------------
+[ ] Layer ocean ambience by wind and wave strength.
+[ ] Drive hull creaks from stress, roll, and wave impact.
+[ ] Drive sail flapping from luffing amount.
+[ ] Drive rope strain from sail force.
+[ ] Add bow wake based on forward speed.
+[ ] Add rain, thunder, gulls, harbor, and crew ambience.
+[ ] Apply low-pass filtering when the camera is underwater.
+[ ] Smooth all physics-driven audio parameters.
+
+
+PART 15 - USER INTERFACE AND ACCESSIBILITY
+==========================================
+
+15.1 Development UI
+-------------------
+[ ] Integrate Dear ImGui or an equivalent debug UI.
+[ ] Display:
+    [ ] FPS and frame-time graph.
+    [ ] CPU/GPU timings.
+    [ ] GPU memory.
+    [ ] Draw calls and triangles.
+    [ ] Camera data.
+    [ ] Wind vector.
+    [ ] Apparent wind.
+    [ ] Wave parameters.
+    [ ] Vessel forces and torques.
+    [ ] Validation messages.
+[ ] Add controls for live tuning.
+[ ] Allow saving tuned values back to data files.
+
+15.2 Game HUD
+-------------
+[ ] Compass.
+[ ] Heading.
+[ ] Boat speed.
+[ ] Wind direction and speed.
+[ ] Sail trim indicator.
+[ ] Heel indicator.
+[ ] Hull and sail condition.
+[ ] Current objective.
+[ ] Interaction prompts.
+[ ] Optional depth sounder.
+[ ] Keep the HUD readable against bright sky and dark water.
+
+15.3 Menus
+----------
+[ ] Main menu.
+[ ] New game.
+[ ] Load game.
+[ ] Pause menu.
+[ ] Graphics settings.
+[ ] Audio settings.
+[ ] Controls and rebinding.
+[ ] Accessibility settings.
+[ ] Confirmation for destructive actions.
+[ ] Error dialogs with actionable messages.
+
+15.4 Accessibility
+------------------
+[ ] Remappable controls.
+[ ] Keyboard, mouse, and gamepad support.
+[ ] Adjustable text/UI scale.
+[ ] Color-blind-safe indicators.
+[ ] Subtitles and speaker labels.
+[ ] Reduced camera shake.
+[ ] Reduced flashing/lightning option.
+[ ] Sailing assists.
+[ ] Hold/toggle alternatives.
+[ ] Configurable motion blur.
+
+
+PART 16 - SAVE, LOAD, AND CONFIGURATION
+======================================
+
+16.1 Save format
+----------------
+[ ] Assign a save-format version.
+[ ] Save:
+    [ ] Player state.
+    [ ] Vessel state and upgrades.
+    [ ] Inventory.
+    [ ] Mission state.
+    [ ] World changes.
+    [ ] Time and weather state.
+    [ ] Deterministic seeds where relevant.
+[ ] Do not serialize raw pointers or Vulkan handles.
+[ ] Use stable asset and entity identifiers.
+[ ] Write to a temporary file first.
+[ ] Flush and atomically replace the previous save.
+[ ] Keep backup saves.
+[ ] Validate data during load.
+[ ] Provide migrations for older save versions.
+[ ] Report corruption instead of silently resetting progress.
+
+16.2 Settings
+-------------
+[ ] Separate user settings from save games.
+[ ] Persist:
+    [ ] Resolution.
+    [ ] Window mode.
+    [ ] VSync.
+    [ ] Quality settings.
+    [ ] Audio levels.
+    [ ] Input bindings.
+    [ ] Accessibility options.
+[ ] Validate every loaded setting.
+[ ] Restore safe graphics defaults after repeated startup failure.
+
+
+PART 17 - OPTIONAL MULTIPLAYER PREPARATION
+=========================================
+
+Do not implement multiplayer until required, but avoid making it impossible.
+
+[ ] Keep simulation state separate from visual state.
+[ ] Use explicit gameplay commands.
+[ ] Use stable entity identifiers.
+[ ] Make fixed-step simulation deterministic where practical.
+[ ] Avoid relying on frame rate for gameplay.
+[ ] If multiplayer is selected:
+    [ ] Choose authoritative server architecture.
+    [ ] Replicate vessel inputs and state.
+    [ ] Interpolate remote ships.
+    [ ] Predict the local ship cautiously.
+    [ ] Reconcile authoritative corrections.
+    [ ] Replicate weather and ocean seeds.
+    [ ] Validate all client messages.
+    [ ] Add bandwidth and packet-loss simulation.
+    [ ] Define join, leave, reconnect, and host migration behavior.
+
+
+PART 18 - PERFORMANCE ENGINEERING
+================================
+
+18.1 Establish budgets
+----------------------
+[ ] At 60 FPS, total frame time is 16.67 ms.
+[ ] Allocate rough budgets:
+    [ ] Simulation.
+    [ ] Render preparation.
+    [ ] GPU geometry.
+    [ ] Ocean.
+    [ ] Shadows.
+    [ ] Post-processing.
+    [ ] UI.
+[ ] Define memory budgets:
+    [ ] GPU-local memory.
+    [ ] Upload memory.
+    [ ] CPU asset memory.
+    [ ] Streaming cache.
+[ ] Define draw-call and descriptor-update budgets.
+
+18.2 CPU optimization
+---------------------
+[ ] Profile before optimizing.
+[ ] Avoid per-frame heap allocation in hot paths.
+[ ] Use frame allocators for transient data.
+[ ] Batch ocean height queries.
+[ ] Parallelize independent work:
+    [ ] Visibility.
+    [ ] Animation.
+    [ ] Asset decompression.
+    [ ] Command recording.
+[ ] Keep the main thread responsible for platform events and orchestration.
+[ ] Minimize lock contention.
+[ ] Use data-oriented layouts for large homogeneous collections.
+
+18.3 GPU optimization
+---------------------
+[ ] Measure passes with timestamp queries.
+[ ] Use RenderDoc and vendor profilers.
+[ ] Reduce overdraw.
+[ ] Use mipmaps and anisotropic filtering.
+[ ] Batch by pipeline and material.
+[ ] Cull invisible objects.
+[ ] Select appropriate image formats.
+[ ] Use transient attachments when supported and beneficial.
+[ ] Avoid unnecessary layout transitions.
+[ ] Use async compute only when profiling proves overlap.
+[ ] Scale expensive effects with quality settings.
+
+18.4 Scalable graphics settings
+-------------------------------
+[ ] Resolution scale.
+[ ] Anti-aliasing mode.
+[ ] Shadow resolution and distance.
+[ ] Ocean geometry resolution.
+[ ] Ocean normal detail.
+[ ] Reflection quality.
+[ ] Volumetric cloud quality.
+[ ] Fog quality.
+[ ] Particle density.
+[ ] Terrain and vegetation distance.
+[ ] Texture quality.
+[ ] VSync and frame cap.
+
+
+PART 19 - TESTING AND VALIDATION
+===============================
+
+19.1 Unit tests
+---------------
+[ ] Vector/matrix conversion helpers.
+[ ] Wave height and derivative functions.
+[ ] Apparent-wind calculation.
+[ ] Sail lift/drag curves.
+[ ] Buoyancy force calculations.
+[ ] Serialization round trips.
+[ ] Asset-ID stability.
+[ ] Configuration validation.
+[ ] World-coordinate rebasing.
+
+19.2 Integration tests
+----------------------
+[ ] Vulkan context creation.
+[ ] Headless or hidden-window render startup where supported.
+[ ] Buffer upload and readback.
+[ ] Texture upload and mip generation.
+[ ] Shader reflection/layout compatibility.
+[ ] Swapchain recreation.
+[ ] Save/load representative game state.
+[ ] Asset cooking and loading.
+
+19.3 Visual tests
+-----------------
+[ ] Render deterministic scenes.
+[ ] Capture reference screenshots.
+[ ] Compare within a tolerance.
+[ ] Include:
+    [ ] PBR material grid.
+    [ ] Shadow cascades.
+    [ ] Ocean at several wind levels.
+    [ ] Shoreline.
+    [ ] Day/night.
+    [ ] Storm.
+    [ ] Underwater camera.
+[ ] Review intentional reference-image changes.
+
+19.4 Physics tests
+------------------
+[ ] Ship floats at expected waterline.
+[ ] Ship returns upright after a small roll.
+[ ] Added mass lowers the waterline.
+[ ] Off-center mass causes expected list.
+[ ] No forward motion directly into the wind.
+[ ] Expected speed ordering across points of sail.
+[ ] Rudder authority scales with water speed.
+[ ] Fixed inputs produce repeatable results.
+[ ] Simulation remains stable during frame-rate variation.
+
+19.5 Runtime validation
+-----------------------
+[ ] Run Vulkan validation layers in every debug session.
+[ ] Enable synchronization validation regularly.
+[ ] Test GPU-assisted validation periodically.
+[ ] Test repeated resize and minimize/restore.
+[ ] Test alt-tab and monitor changes.
+[ ] Test device loss handling strategy.
+[ ] Test missing/corrupt assets.
+[ ] Test low-memory behavior.
+[ ] Test long sessions for leaks.
+
+19.6 Continuous integration
+---------------------------
+[ ] Configure from a clean checkout.
+[ ] Build Debug and Release.
+[ ] Compile shaders.
+[ ] Run unit tests.
+[ ] Run static analysis.
+[ ] Package a runnable artifact.
+[ ] Keep CI paths independent of one developer's machine.
+[ ] Pin or document tool versions.
+
+
+PART 20 - ERROR HANDLING AND RECOVERY
+=====================================
+
+[ ] Check every Vulkan result that can fail.
+[ ] Include operation and object context in error messages.
+[ ] Distinguish recoverable and fatal failures.
+[ ] Recover from:
+    [ ] Out-of-date swapchain.
+    [ ] Temporary missing assets using explicit fallback assets.
+    [ ] Invalid user settings.
+    [ ] Corrupt save with backup.
+[ ] Exit cleanly on unrecoverable:
+    [ ] Missing Vulkan support.
+    [ ] Missing required extensions.
+    [ ] No compatible GPU.
+    [ ] Device creation failure.
+[ ] Define a strategy for VK_ERROR_DEVICE_LOST:
+    [ ] Collect diagnostics.
+    [ ] Save logs.
+    [ ] Show a useful message.
+    [ ] Attempt recreation only if thoroughly tested.
+[ ] Never convert a failure into a success-shaped empty object without logging
+    or propagating the error.
+
+
+PART 21 - DEVELOPMENT TOOLS
+===========================
+
+[ ] RenderDoc capture support.
+[ ] GPU object names.
+[ ] GPU markers around every pass.
+[ ] Debug camera.
+[ ] Wireframe mode.
+[ ] Freeze culling camera.
+[ ] Visualize:
+    [ ] Frusta.
+    [ ] Bounding boxes.
+    [ ] Light volumes.
+    [ ] Shadow cascades.
+    [ ] Ocean normals.
+    [ ] Buoyancy points.
+    [ ] Force vectors.
+    [ ] Centers of mass and buoyancy.
+    [ ] AI routes.
+    [ ] Collision shapes.
+[ ] Runtime console commands.
+[ ] Reload shaders.
+[ ] Reload gameplay data.
+[ ] Teleport to named locations.
+[ ] Change time and weather.
+[ ] Spawn vessels.
+[ ] Record and replay input for debugging.
+[ ] Save performance captures with scene and settings metadata.
+
+
+PART 22 - SECURITY AND ROBUSTNESS
+=================================
+
+[ ] Treat all loaded files as potentially malformed.
+[ ] Bounds-check binary asset offsets and lengths.
+[ ] Limit decompressed asset sizes.
+[ ] Reject invalid image dimensions.
+[ ] Validate save-game values.
+[ ] Avoid unchecked integer overflow in allocation sizes.
+[ ] Do not execute scripts or commands from untrusted asset data.
+[ ] Keep third-party libraries updated intentionally.
+[ ] Fuzz parsers for custom asset and save formats when practical.
+[ ] If multiplayer is added, never trust client state.
+
+
+PART 23 - BUILD AND DEPLOYMENT AUTOMATION
+=========================================
+
+[ ] Produce reproducible Debug, RelWithDebInfo, and Release builds.
+[ ] Compile shaders as explicit build targets.
+[ ] Recompile shaders when source files or included shader files change.
+[ ] Fail the build when shader compilation fails.
+[ ] Run the asset cooker as an explicit build or packaging target.
+[ ] Copy only required runtime files to the output directory.
+[ ] Copy cooked assets and compiled shader binaries to the output directory.
+[ ] Keep compiler, linker, shader compiler, and asset cooker versions recorded.
+[ ] Disable Vulkan validation by default in Release builds.
+[ ] Keep validation selectable through a build option.
+[ ] Keep logging selectable by severity and build configuration.
+[ ] Do not link against development-only Vulkan SDK libraries at runtime.
+[ ] Verify runtime DLL dependencies automatically.
+[ ] Generate a clean deployment directory from an empty build directory.
+[ ] Run startup smoke tests against the deployment directory.
+[ ] Test the executable without environment variables supplied by the Vulkan
+    SDK development environment.
+[ ] Add CI jobs for clean configure, build, test, and deployment generation.
+[ ] Cache dependencies without caching generated project outputs incorrectly.
+[ ] Store compiler and test output as CI artifacts when a job fails.
+
+
+PART 24 - RECOMMENDED IMPLEMENTATION MILESTONES
+===============================================
+
+Milestone 0 - Clean architecture
+--------------------------------
+Goal: A maintainable application shell.
+
+[ ] App owns Window and Renderer.
+[ ] Renderer references the existing Window.
+[ ] Headers have no circular inclusion.
+[ ] Logging and errors work.
+[ ] Main loop runs and exits cleanly.
+[ ] CMake produces clean Debug and Release builds.
+
+Exit criteria:
+[ ] No compiler errors.
+[ ] No avoidable warnings in project code.
+[ ] Opening and closing the app repeatedly is stable.
+
+Milestone 1 - First Vulkan triangle
+-----------------------------------
+Goal: A validated Vulkan frame reaches the screen.
+
+[ ] Instance.
+[ ] Debug messenger.
+[ ] Surface.
+[ ] Physical device.
+[ ] Logical device and queues.
+[ ] Swapchain.
+[ ] Command buffers.
+[ ] Synchronization.
+[ ] Clear screen.
+[ ] Triangle.
+[ ] Resize handling.
+
+Exit criteria:
+[ ] Zero Vulkan validation errors.
+[ ] Resize, minimize, and restore work.
+[ ] Stable operation for at least 30 minutes.
+
+Milestone 2 - Basic 3D renderer
+-------------------------------
+Goal: Render a textured ship and island.
+
+[ ] Depth buffer.
+[ ] Camera.
+[ ] Mesh upload.
+[ ] Texture upload.
+[ ] PBR material.
+[ ] Sun light.
+[ ] Basic shadows.
+[ ] glTF import.
+
+Exit criteria:
+[ ] Correct depth and perspective.
+[ ] Correct sRGB handling.
+[ ] Stable asset loading.
+
+Milestone 3 - Ocean prototype
+-----------------------------
+Goal: A convincing moving ocean that can be queried by physics.
+
+[ ] Gerstner waves.
+[ ] Camera-centered ocean mesh.
+[ ] Ocean shading.
+[ ] Sky reflection.
+[ ] Foam prototype.
+[ ] CPU height/normal query.
+
+Exit criteria:
+[ ] CPU and GPU wave surfaces visibly agree.
+[ ] No major cracks or horizon artifacts.
+[ ] Ocean pass fits its frame budget.
+
+Milestone 4 - Floating ship
+---------------------------
+Goal: One uncontrolled vessel reacts correctly to waves.
+
+[ ] Rigid-body state.
+[ ] Buoyancy samples.
+[ ] Hydrodynamic damping.
+[ ] Stable fixed-step simulation.
+[ ] Physics debug visualization.
+
+Exit criteria:
+[ ] Vessel floats at the designed waterline.
+[ ] Vessel recovers from roll.
+[ ] Results are stable across rendering frame rates.
+
+Milestone 5 - Playable sailing
+------------------------------
+Goal: The player can sail around an island.
+
+[ ] Wind.
+[ ] Apparent wind.
+[ ] Sail lift and drag.
+[ ] Rudder.
+[ ] Player controls.
+[ ] Chase camera.
+[ ] Sailing HUD.
+[ ] Basic audio.
+
+Exit criteria:
+[ ] Tacking works.
+[ ] Different sail trims have understandable effects.
+[ ] Controls are enjoyable for a new tester.
+
+Milestone 6 - World and weather
+-------------------------------
+Goal: A small but complete sailing environment.
+
+[ ] Island terrain.
+[ ] Shallow water.
+[ ] Shore foam.
+[ ] Time of day.
+[ ] Weather transitions.
+[ ] Storm conditions.
+[ ] Port location.
+[ ] World streaming prototype if needed.
+
+Exit criteria:
+[ ] Player can navigate using landmarks and instruments.
+[ ] Weather affects both visuals and vessel dynamics.
+
+Milestone 7 - Systems integration
+---------------------------------
+Goal: Exercise all engine systems in one deterministic runtime scenario.
+
+[ ] Load a world cell and vessel through the asset manager.
+[ ] Initialize ocean, weather, physics, rendering, audio, input, and UI.
+[ ] Drive the vessel through the normal command interface.
+[ ] Serialize and restore the complete runtime state.
+[ ] Stream world data while rendering and simulation continue.
+[ ] Exercise resize, minimize, focus loss, and shutdown paths.
+[ ] Record CPU, GPU, memory, and streaming metrics.
+
+Exit criteria:
+[ ] All subsystems communicate through defined interfaces.
+[ ] Save/load restores equivalent state.
+[ ] No resource, handle, or thread leaks are reported.
+[ ] The integrated scenario remains within frame and memory budgets.
+
+Milestone 8 - Performance and scalability
+-----------------------------------------
+Goal: Meet defined budgets under worst-case programmed workloads.
+
+[ ] Generate repeatable stress scenes.
+[ ] Measure high vessel, entity, light, particle, and wave-query counts.
+[ ] Profile CPU scheduling and allocation.
+[ ] Profile each GPU pass.
+[ ] Add culling, batching, LOD, and streaming improvements where measured.
+[ ] Validate quality-setting fallback paths.
+[ ] Verify large-world coordinate stability.
+[ ] Run long-duration memory and synchronization tests.
+
+Exit criteria:
+[ ] Target workloads meet CPU and GPU frame budgets.
+[ ] Memory remains within configured budgets.
+[ ] No unbounded queues, caches, or allocations remain.
+
+Milestone 9 - Automated validation and deployment
+-------------------------------------------------
+Goal: Produce a reproducible, tested runtime build.
+
+[ ] Build from a clean checkout and empty build directory.
+[ ] Run unit, integration, physics, visual, and serialization tests.
+[ ] Run Vulkan validation and synchronization validation scenarios.
+[ ] Test save-format migrations.
+[ ] Generate the deployment directory automatically.
+[ ] Run the deployed executable without development environment assumptions.
+[ ] Verify runtime dependencies and asset manifests.
+[ ] Run startup, resize, load, simulation, save, and shutdown smoke tests.
+
+Exit criteria:
+[ ] Build and tests pass in CI.
+[ ] Deployment generation is reproducible.
+[ ] Vulkan validation reports no engine errors.
+[ ] No known deterministic crash, corruption, or resource leak remains.
+
+
+PART 25 - IMMEDIATE NEXT STEPS FOR THIS PROJECT
+===============================================
+
+Complete these in order before expanding the engine:
+
+1. Correct class ownership.
+   [ ] Keep one Window instance in App.
+   [ ] Pass Window by reference to Renderer.
+   [ ] Remove the Window member currently duplicated inside Renderer.
+
+2. Correct header dependencies.
+   [ ] Remove broad circular includes from common.h.
+   [ ] Include only required headers in each header.
+   [ ] Forward-declare Window where possible.
+
+3. Choose Vulkan handle style.
+   [ ] Prefer vk::raii for automatic lifetime management, or
+   [ ] Build explicit move-only wrappers with reliable cleanup.
+
+4. Implement Renderer initialization in explicit stages.
+   [ ] CreateInstance().
+   [ ] SetupDebugMessenger().
+   [ ] CreateSurface().
+   [ ] SelectPhysicalDevice().
+   [ ] CreateLogicalDevice().
+   [ ] CreateAllocator().
+   [ ] CreateSwapchain().
+   [ ] CreateFrameResources().
+
+5. Do not create important Vulkan data as temporary constructor variables.
+   [ ] Store long-lived instance/device/swapchain resources as Renderer-owned
+       members.
+   [ ] Keep short-lived create-info structures local.
+
+6. Replace raw public state with private members and narrow methods.
+   [ ] Window exposes NativeHandle(), ShouldClose(), PollEvents(), and
+       FramebufferSize().
+   [ ] Renderer exposes Initialize(), DrawFrame(), OnResize(), and Shutdown()
+       only if explicit shutdown is needed.
+
+7. Enable validation and produce a clear screen.
+   [ ] Stop and fix all validation errors before adding mesh rendering.
+
+8. Add a fixed-step loop before implementing buoyancy.
+   [ ] Keep render interpolation separate from authoritative physics.
+
+9. Implement one feature at a time with an exit test.
+   [ ] Never stack ocean, physics, assets, and gameplay on an unvalidated
+       Vulkan foundation.
+
+
+FINAL ENGINE COMPLETION CHECKLIST
+=================================
+
+Core
+[ ] Clean startup and shutdown.
+[ ] Stable ownership and lifetimes.
+[ ] Logging, assertions, configuration, profiling.
+[ ] Fixed-step simulation.
+
+Vulkan
+[ ] Validated instance/device/swapchain.
+[ ] Correct synchronization.
+[ ] Memory allocator.
+[ ] Resource lifetime management.
+[ ] Shader and pipeline system.
+[ ] Render pass scheduling.
+
+Rendering
+[ ] PBR meshes.
+[ ] Shadows.
+[ ] Sky and atmosphere.
+[ ] Ocean and foam.
+[ ] Terrain and vegetation.
+[ ] Particles.
+[ ] Post-processing.
+[ ] UI.
+
+Sailing
+[ ] Queryable waves.
+[ ] Stable buoyancy.
+[ ] Hydrodynamic resistance.
+[ ] Rudder.
+[ ] Wind and apparent wind.
+[ ] Sail forces.
+[ ] Damage and grounding as required.
+
+World
+[ ] Islands and bathymetry.
+[ ] Ports.
+[ ] Streaming.
+[ ] Weather.
+[ ] Time of day.
+[ ] AI navigation.
+
+Game
+[ ] Player controls.
+[ ] Camera.
+[ ] HUD and menus.
+[ ] Missions.
+[ ] Inventory/economy as required.
+[ ] Save/load.
+[ ] Audio.
+[ ] Accessibility.
+
+Engineering
+[ ] Asset cooker.
+[ ] Debug tools.
+[ ] Automated tests.
+[ ] CI builds.
+[ ] Performance budgets.
+[ ] Hardware testing.
+[ ] Reproducible deployment build.
+[ ] Runtime dependency verification.
+
+The most important rule is to preserve a working build at every milestone.
+Build the smallest validated version of each system, measure it, and only then
+add complexity.

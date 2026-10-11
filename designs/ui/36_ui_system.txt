@@ -1,0 +1,86 @@
+UI SYSTEM CLASS DESIGN
+======================
+
+Class:
+
+    UISystem
+
+Purpose:
+
+    Own retained game UI screens and immediate development overlays, route input, and render DPI-correct draw data.
+
+Public API:
+
+    Initialize(window,renderer);
+    PushScreen(id,args);
+    PopScreen();
+    SetFocus(widget);
+    HandleInput(event)->bool;
+    Update(RenderDeltaSeconds);
+    BuildDrawData();
+    Notify(modelEvent);
+    Shutdown();
+
+Internal state and components:
+
+    - screen stack.
+    - widget tree.
+    - focus/capture.
+    - style/font atlases.
+    - binding models.
+    - accessibility metadata.
+    - draw buffers.
+
+Lifecycle and ownership:
+
+    UI owns widget instances and subscriptions; render resources retire by frame ticket; gameplay data enters as snapshots/commands
+
+Error behavior:
+
+    Invalid screen/widget/focus, stale token, asset/font, draw capacity, or
+    renderer handoff failure returns UIError. Missing named presentation assets
+    use only explicit proxy policy and retain a degraded diagnostic.
+
+Threading and timing constraints:
+
+    main thread update; render consumes immutable draw packet; no direct mutation of simulation; callbacks emit GameplayCommands
+
+Dependencies:
+
+    - WindowPlatform.
+    - InputActionSystem.
+    - Renderer UI draw-packet/pass interface.
+    - TextureSystem.
+    - ConfigurationSettings.
+    - GameplayCommandBus for state-changing output values.
+
+Tests:
+
+    - focus traversal.
+    - modal capture.
+    - DPI scaling.
+    - screen lifetime.
+    - missing asset fallback.
+    - draw packet handoff.
+    - input consumption.
+
+Implementation rules:
+
+    - Keep implementation-only types out of public headers.
+    - Use RAII and generational IDs; do not expose owning raw pointers.
+    - Validate descriptions before allocating or mutating state.
+    - Publish complete snapshots/generations rather than partially updated data.
+    - Add diagnostics for failure context without making logging a dependency
+      of correctness.
+
+Canonical integration contract:
+
+    Normative widget/screen/presentation owner. P0 routes input consumption; P13
+    updates from immutable PresentationModel snapshots; P14 emits a frame-local
+    UIDrawPacket retained through GpuCompletionSet. UI never references mutable
+    gameplay or emits direct callbacks into it; all state changes are future/
+    current-policy GameplayCommands. Widget/subscription/capture tokens are
+    RAII and callbacks run outside tree locks.
+
+    See ..\FRAME_THREADING_MODEL.txt, ..\ERROR_RESULT_POLICY.txt, and
+    ..\gameplay\59_gameplay_command_bus.txt.

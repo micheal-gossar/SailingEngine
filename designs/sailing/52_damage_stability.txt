@@ -1,0 +1,80 @@
+DAMAGE STABILITY CLASS DESIGN
+=============================
+
+Class:
+
+    DamageStabilitySystem
+
+Purpose:
+
+    Track hull/component damage, flooding, mass shifts, repair, capsize, and sinking transitions.
+
+Public API:
+
+    RegisterVessel(id,compartments);
+    ApplyHit(id,DamageEvent);
+    Step(id,environment,TickId,FixedDeltaSeconds);
+    BeginRepair(...);
+    Stability(id);
+    Serialize(id);
+    DrainEvents();
+
+Internal state and components:
+
+    - component health.
+    - compartment water volumes/leaks.
+    - pumps.
+    - center-of-mass offsets.
+    - righting metrics.
+    - capsize/sink timers.
+
+Lifecycle and ownership:
+
+    state owned with vessel; damage definitions immutable; teardown cancels repairs and removes mass modifiers
+
+Error behavior:
+
+    Invalid/stale vessel, duplicate event sequence, impossible compartment/
+    units, inventory transaction failure, and numerical failure return
+    DamageError. A failed event/repair transaction leaves prior state intact.
+
+Threading and timing constraints:
+
+    fixed simulation step; damage events sorted by sequence; flooding changes mass before force integration in next defined phase
+
+Dependencies:
+
+    - VesselStepContext/PhysicsBodySnapshot values.
+    - Buoyancy mass-property update interface.
+    - Inventory transaction request/result events.
+
+Tests:
+
+    - penetration/leak.
+    - flooding conservation.
+    - pump/repair resources.
+    - capsize timer.
+    - sinking.
+    - duplicate hit IDs.
+    - persistence.
+
+Implementation rules:
+
+    - Keep implementation-only types out of public headers.
+    - Use RAII and generational IDs; do not expose owning raw pointers.
+    - Validate descriptions before allocating or mutating state.
+    - Publish complete snapshots/generations rather than partially updated data.
+    - Add diagnostics for failure context without making logging a dependency
+      of correctness.
+
+Canonical integration contract:
+
+    Normative per-vessel damage/flooding owner. P8 consumes ordered damage and
+    repair transaction results; it stages mass/center/leak changes for the next
+    P6, so PhysicsWorld/Buoyancy never observe half a flooding update. Water
+    volume m3, mass kg, rates m3/s, force N, and timers FixedDelta are explicit.
+    It emits events/snapshots; it does not call VesselSystem, Inventory, UI, or
+    audio recursively.
+
+    See ..\FRAME_THREADING_MODEL.txt, ..\gameplay\35_inventory_economy.txt,
+    and INDEX.txt.

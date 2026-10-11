@@ -1,0 +1,76 @@
+HYDRODYNAMICS CLASS DESIGN
+==========================
+
+Class:
+
+    HydrodynamicsSystem
+
+Purpose:
+
+    Compute water drag, lift, planing, slamming, and keel forces from hull motion and ocean samples.
+
+Public API:
+
+    RegisterHull(vessel,hullDef);
+    UnregisterHull(vessel);
+    ComputeForces(vessel,bodyState,oceanSamples,FixedDeltaSeconds)->ForceSet;
+    DebugForces(vessel);
+
+Internal state and components:
+
+    - hull panels/coefficients.
+    - wetted-state history.
+    - filtered velocities.
+    - planing/slam state.
+    - debug vectors.
+
+Lifecycle and ownership:
+
+    hull definitions immutable assets; runtime cache owned per vessel and removed before physics body
+
+Error behavior:
+
+    Invalid/stale hull, coefficients, units, query generation, non-finite state,
+    or numerical-domain failure returns HydrodynamicsError with no partial force.
+
+Threading and timing constraints:
+
+    fixed simulation step; queries batched before force computation; equations avoid frame-rate dependence and clamp pathological values
+
+Dependencies:
+
+    - PhysicsBodySnapshot value.
+    - OceanQueryService results.
+    - AssetManager.
+
+Tests:
+
+    - zero relative velocity.
+    - drag direction.
+    - keel lift.
+    - planing threshold.
+    - slam impulse clamp.
+    - dry hull.
+    - coefficient validation.
+
+Implementation rules:
+
+    - Keep implementation-only types out of public headers.
+    - Use RAII and generational IDs; do not expose owning raw pointers.
+    - Validate descriptions before allocating or mutating state.
+    - Publish complete snapshots/generations rather than partially updated data.
+    - Add diagnostics for failure context without making logging a dependency
+      of correctness.
+
+Canonical integration contract:
+
+    Normative stateless/P6 cached ForceSet producer. It does not call
+    PhysicsWorld or VesselSystem; the coordinator supplies body state and one
+    coherent OceanQueryResults batch, then applies the returned force/torque.
+    Hull definitions are immutable AssetId generations. SI and ForceProvenance
+    distinguish pressure/drag already applied from next-tick ocean reaction;
+    buoyancy/hydrodynamic terms have a documented non-overlapping partition.
+
+    See 07_buoyancy_system.txt, INDEX.txt,
+    ..\ocean\76_ocean_query_service.txt, and
+    ..\ocean\77_ocean_interaction_wakes.txt.

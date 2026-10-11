@@ -1,0 +1,76 @@
+SCHEMA SERIALIZATION CLASS DESIGN
+=================================
+
+Class:
+
+    SchemaSerialization
+
+Purpose:
+
+    Provide bounded, versioned binary/value serialization and migrations shared by saves, assets, and network preparation.
+
+Public API:
+
+    RegisterSchema(type,version,fields);
+    Encode(type,object)->Bytes;
+    Decode(type,bytes,limits);
+    RegisterMigration(type,from,to,fn);
+    Migrate(value,target);
+    HashSchema(type);
+
+Internal state and components:
+
+    - schema registry.
+    - stable field IDs.
+    - codecs.
+    - migration DAG.
+    - decode limits.
+    - unknown-field storage policy.
+    - schema hashes.
+
+Lifecycle and ownership:
+
+    decoded object owns data; reader uses bounded spans; registry frozen before multithreaded use; migrations create new values transactionally
+
+Error behavior:
+
+    Encode/decode/migrate return typed Result. Decode validates byte, container,
+    recursion, string, allocation, and decompression limits before allocation.
+    Migration builds a new value and cannot partially mutate its input.
+
+Threading and timing constraints:
+
+    registry setup single-threaded then read-only; decode thread-safe; never invoke gameplay during parsing
+
+Dependencies:
+
+    - DebugDiagnostics.
+    - None for codecs; callers supply bounded byte spans and own I/O.
+
+Tests:
+
+    - round-trip.
+    - unknown field.
+    - old/new migration.
+    - missing migration.
+    - truncated/oversized input.
+    - recursion/container limits.
+    - stable hash.
+
+Implementation rules:
+
+    - Keep implementation-only types out of public headers.
+    - Use RAII and generational IDs; do not expose owning raw pointers.
+    - Validate descriptions before allocating or mutating state.
+    - Publish complete snapshots/generations rather than partially updated data.
+    - Add diagnostics for failure context without making logging a dependency
+      of correctness.
+
+Canonical integration contract:
+
+    Normative schema/value service shared by cooked assets, saves, and network
+    preparation. Stable field/type IDs and endian/float encodings are versioned.
+    Runtime Handle<Tag>, EntityId, raw pointer, path, Vulkan object, and component
+    memory dumps are not serializable. Persist only AssetId,
+    PersistentEntityId, typed units, TickId/epoch, and deterministic seed state.
+    See ..\CANONICAL_CONVENTIONS.txt and ..\ERROR_RESULT_POLICY.txt.

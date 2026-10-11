@@ -1,0 +1,78 @@
+LIGHTING SHADOW CLASS DESIGN
+============================
+
+Class:
+
+    LightingShadowSystem
+
+Purpose:
+
+    Collect lights, choose shadow work within budgets, and build clustered lighting/shadow passes.
+
+Public API:
+
+    CreateLight(desc)->LightId;
+    UpdateLight(id,...);
+    DestroyLight(id);
+    BuildFrame(view,worldSnapshot);
+    AddPasses(graph);
+    LightingData();
+
+Internal state and components:
+
+    - generational light registry.
+    - sun light.
+    - cluster buffers.
+    - visible light lists.
+    - shadow atlas allocator.
+    - cascade state.
+    - cache generations.
+
+Lifecycle and ownership:
+
+    system owns light runtime and GPU atlases; entities own only IDs; per-frame lighting packet valid until frame retirement
+
+Error behavior:
+
+    Invalid/stale light, capacity/atlas, snapshot, and GPU failures return
+    LightingError. Shadow omission is explicit in the frame packet and ordered
+    by stable budget priority.
+
+Threading and timing constraints:
+
+    simulation changes queue; render snapshot immutable; atlas updates and barriers declared in render graph; hard light/shadow budgets
+
+Dependencies:
+
+    - RenderGraph.
+    - CameraSystem.
+    - SkyLightingSnapshot value from SkyAtmosphereSystem.
+    - MaterialSystem.
+
+Tests:
+
+    - light culling.
+    - stale ID.
+    - cascade stability.
+    - atlas allocation/eviction.
+    - budget priority.
+    - no-shadow fallback.
+
+Implementation rules:
+
+    - Keep implementation-only types out of public headers.
+    - Use RAII and generational IDs; do not expose owning raw pointers.
+    - Validate descriptions before allocating or mutating state.
+    - Publish complete snapshots/generations rather than partially updated data.
+    - Add diagnostics for failure context without making logging a dependency
+      of correctness.
+
+Canonical integration contract:
+
+    Normative light registry and render pass provider. Simulation changes queue
+    as values; P14 builds one immutable LightingFramePacket. It consumes but
+    never calls/mutates SkyAtmosphereSystem, breaking the former mutual
+    dependency. Light units are metres, lumens/candelas/lux or radiometric
+    equivalents explicitly named. Atlas/resources retire by GpuCompletionSet.
+
+    See 27_sky_atmosphere.txt, 03_render_graph.txt, and INDEX.txt.

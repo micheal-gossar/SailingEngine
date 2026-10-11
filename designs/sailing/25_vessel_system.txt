@@ -1,0 +1,86 @@
+VESSEL SYSTEM CLASS DESIGN
+==========================
+
+Class:
+
+    VesselSystem
+
+Purpose:
+
+    Compose hull, sails, rudder, buoyancy, propulsion, damage, and control into fixed-step vessel simulation.
+
+Public API:
+
+    Spawn(VesselDefinition,Transform)->VesselId;
+    Despawn(id);
+    SetControls(id,VesselControls);
+    Step(context);
+    State(id) const;
+    ApplyDamage(...);
+    AttachMooring(...);
+
+Internal state and components:
+
+    - entity/body mappings.
+    - component arrays for hull/sails/rudder/keel/crew/damage.
+    - control state.
+    - cached ocean/wind samples.
+
+Lifecycle and ownership:
+
+    EntityRegistry owns EntityId; VesselSystem owns VesselId mappings, runtime
+    sailing records, and orchestration. PhysicsWorld owns BodyId; force
+    subsystems own registered caches; AssetManager owns retained definitions.
+    Despawn removes constraints/body and subsystem registrations before mappings.
+
+Error behavior:
+
+    Spawn/control/step/despawn return VesselError for invalid/stale IDs,
+    definition/dependency, phase, capacity, or force/query failure. Spawn and
+    despawn are transactional; partial mappings/bodies/registrations roll back.
+
+Threading and timing constraints:
+
+    Simulation-thread P5/P6/P8 only. Stable order is command/control latch,
+    coherent weather/ocean sample batch, pending mass change, force producers,
+    P7 PhysicsWorld integration, then post-step kinematics/damage/events.
+
+Dependencies:
+
+    - PhysicsWorld.
+    - BuoyancySystem.
+    - SailAerodynamicsSystem.
+    - HydrodynamicsSystem.
+    - RudderSteeringSystem.
+    - WeatherSnapshot and OceanQueryService values.
+
+Tests:
+
+    - spawn/despawn.
+    - zero wind.
+    - sail/rudder force routing.
+    - capsize.
+    - damaged component.
+    - deterministic subsystem ordering.
+
+Implementation rules:
+
+    - Keep implementation-only types out of public headers.
+    - Use RAII and generational IDs; do not expose owning raw pointers.
+    - Validate descriptions before allocating or mutating state.
+    - Publish complete snapshots/generations rather than partially updated data.
+    - Add diagnostics for failure context without making logging a dependency
+      of correctness.
+
+Canonical integration contract:
+
+    Normative sailing coordinator. Subsystems consume VesselStepContext and
+    return ForceSet/events; they do not depend on or recursively call
+    VesselSystem. Every force/reaction has exactly one ForceProvenance owner.
+    Ocean generation N drives P6; post-step OceanCouplingBatch builds N+1 and
+    any ocean-owned reaction applies next tick. Vessel controls enter only
+    through GameplayCommandBus.
+
+    See INDEX.txt, ..\FRAME_THREADING_MODEL.txt,
+    ..\ocean\72_ocean_domain_coordinator.txt, and
+    ..\ocean\77_ocean_interaction_wakes.txt.

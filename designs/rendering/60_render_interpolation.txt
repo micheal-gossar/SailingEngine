@@ -1,0 +1,80 @@
+RENDER INTERPOLATION CLASS DESIGN
+=================================
+
+Class:
+
+    RenderInterpolationSystem
+
+Purpose:
+
+    Build immutable render snapshots by interpolating authoritative previous/current simulation state without feeding results back.
+
+Public API:
+
+    CaptureTick(world,tick);
+    Build(RenderInterpolationAlpha,OriginGeneration)->RenderWorldSnapshot;
+    RegisterInterpolator(component,fn);
+    OnTeleport(entity);
+    Clear();
+
+Internal state and components:
+
+    - double-buffered component snapshots.
+    - previous/current transforms.
+    - teleport flags.
+    - spawn/despawn sets.
+    - origin generation.
+    - interpolation registry.
+
+Lifecycle and ownership:
+
+    system owns copied render-relevant values; snapshot shared through frame completion; no pointers into mutable ECS storage
+
+Error behavior:
+
+    Stale EntityId/tick/origin generation, invalid alpha, missing interpolation
+    policy, and capacity return RenderSnapshotError. It holds the last coherent
+    pair or omits an entity explicitly; generations are never mixed.
+
+Threading and timing constraints:
+
+    Capture at P12 fixed-tick end; Build on render thread from published
+    buffers; RenderInterpolationAlpha is clamped; publication uses
+    generation/double-buffer synchronization.
+
+Dependencies:
+
+    - EntityRegistry.
+    - TickId and RenderInterpolationAlpha values from SimulationClock.
+    - WorldCoordinateSystem.
+    - CameraSystem consumes the resulting camera component snapshot.
+
+Tests:
+
+    - transform interpolation.
+    - quaternion shortest path.
+    - spawn/despawn.
+    - teleport no blend.
+    - origin shift.
+    - concurrent publish/read.
+
+Implementation rules:
+
+    - Keep implementation-only types out of public headers.
+    - Use RAII and generational IDs; do not expose owning raw pointers.
+    - Validate descriptions before allocating or mutating state.
+    - Publish complete snapshots/generations rather than partially updated data.
+    - Add diagnostics for failure context without making logging a dependency
+      of correctness.
+
+Canonical integration contract:
+
+    Normative simulation-to-render handoff owner. CaptureTick runs only P12 and
+    copies render-relevant values from immutable/current ECS views; Build runs
+    P14 and returns a snapshot retained through GpuCompletionSet. It has no
+    CameraSystem ownership dependency, breaking the former camera cycle.
+    Interpolation handles teleport/spawn/despawn and quaternions, but never
+    generates events, collision, authority, save, audio timing, or feedback.
+
+    See ..\CANONICAL_CONVENTIONS.txt, ..\FRAME_THREADING_MODEL.txt,
+    and 23_camera_system.txt.

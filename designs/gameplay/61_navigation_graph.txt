@@ -1,0 +1,79 @@
+NAVIGATION GRAPH CLASS DESIGN
+=============================
+
+Class:
+
+    NavigationGraph
+
+Purpose:
+
+    Store streamable water-navigation nodes, directed edges, clearances, and versioned tile connectivity.
+
+Public API:
+
+    LoadTile(tile,data);
+    UnloadTile(tile);
+    Neighbors(node);
+    FindNearest(position,constraints);
+    ConnectBoundary(a,b);
+    Snapshot(tiles);
+    Validate();
+
+Internal state and components:
+
+    - tile-local nodes/edges.
+    - global stable node IDs.
+    - clearance/depth/speed metadata.
+    - boundary portals.
+    - spatial index.
+    - graph generation.
+
+Lifecycle and ownership:
+
+    graph owns loaded tiles; snapshots retain immutable tile blocks; unload removes discovery but retained snapshots remain valid
+
+Error behavior:
+
+    Invalid tile/node/edge/datum/generation, duplicate stable ID, unavailable
+    dependency, capacity, and validation failure return NavigationGraphError.
+    Failed tile prepare leaves the published graph generation unchanged.
+
+Threading and timing constraints:
+
+    tile mutation main/streaming boundary; path jobs read immutable snapshot lock-free; IDs never silently alias after reload
+
+Dependencies:
+
+    - WorldStreamingManager participant/WorldCellLease interface.
+    - Immutable Terrain/Bathymetry generation.
+    - Cooked navigation tile schema; AssetCooker is offline producer only.
+
+Tests:
+
+    - boundary connection.
+    - nearest constraint.
+    - unload with snapshot.
+    - duplicate ID.
+    - invalid edge.
+    - graph validation.
+    - deterministic neighbors.
+
+Implementation rules:
+
+    - Keep implementation-only types out of public headers.
+    - Use RAII and generational IDs; do not expose owning raw pointers.
+    - Validate descriptions before allocating or mutating state.
+    - Publish complete snapshots/generations rather than partially updated data.
+    - Add diagnostics for failure context without making logging a dependency
+      of correctness.
+
+Canonical integration contract:
+
+    Normative loaded graph-tile owner and streaming participant. NodeId is a
+    stable typed graph identity; loaded record handles remain generation
+    checked. P3 atomically publishes tile/boundary connections after datum,
+    depth, clearance, and terrain generation validation. Path jobs pin immutable
+    blocks; unload removes discovery but waits for retained snapshots.
+
+    See ..\world\10_world_streaming_manager.txt,
+    ..\ocean\89_bathymetry_pipeline.txt, and INDEX.txt.

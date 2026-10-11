@@ -1,0 +1,82 @@
+INVENTORY ECONOMY CLASS DESIGN
+==============================
+
+Class:
+
+    InventoryEconomySystem
+
+Purpose:
+
+    Manage typed item stacks, vessel cargo limits, currencies, shops, and atomic transactions.
+
+Public API:
+
+    CreateInventory(owner,limits)->InventoryId;
+    BeginTransaction()->Transaction;
+    Add/Remove/Transfer;
+    Buy/Sell;
+    Quote(shop,item,qty);
+    Commit(tx);
+    Snapshot(id);
+    Serialize();
+
+Internal state and components:
+
+    - generational inventories.
+    - item definitions.
+    - stacks.
+    - mass/volume totals.
+    - wallets.
+    - shop stock/pricing.
+    - transaction journal.
+    - revision numbers.
+
+Lifecycle and ownership:
+
+    system owns inventories; item definitions shared immutable; transaction owns staged deltas and expires if revisions change
+
+Error behavior:
+
+    Invalid/stale InventoryId/AssetId, capacity, mass/volume/currency overflow,
+    insufficient funds/items, stale revision, duplicate transaction key, and
+    pricing error return EconomyError. Commit is all-or-none and idempotent.
+
+Threading and timing constraints:
+
+    simulation thread commits; read-only snapshots may cross threads; all multi-inventory changes lock/order by ID or execute on one thread
+
+Dependencies:
+
+    - AssetManager.
+    - EntityRegistry.
+    - SaveSystem consumes registered snapshots; no runtime dependency.
+
+Tests:
+
+    - stack merge/split.
+    - capacity.
+    - insufficient funds.
+    - atomic transfer rollback.
+    - stale transaction.
+    - pricing bounds.
+    - persistence.
+
+Implementation rules:
+
+    - Keep implementation-only types out of public headers.
+    - Use RAII and generational IDs; do not expose owning raw pointers.
+    - Validate descriptions before allocating or mutating state.
+    - Publish complete snapshots/generations rather than partially updated data.
+    - Add diagnostics for failure context without making logging a dependency
+      of correctness.
+
+Canonical integration contract:
+
+    Normative InventoryId/wallet/transaction owner. Mass kg, volume m3, and
+    currency integer minor units are explicit. P8 is the sole commit phase;
+    transactions order touched inventories by typed ID and publish immutable
+    result events. Mission, damage/repair, shops, and UI submit requests/consume
+    results; inventory never calls those producers. Asset definitions are
+    retained immutable generations and missing definitions fail explicitly.
+
+    See 34_mission_system.txt, ..\CANONICAL_CONVENTIONS.txt, and INDEX.txt.

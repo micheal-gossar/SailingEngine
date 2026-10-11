@@ -1,0 +1,79 @@
+WORLD COORDINATE CLASS DESIGN
+=============================
+
+Class:
+
+    WorldCoordinateSystem
+
+Purpose:
+
+    Centralize double-precision world coordinates, floating-origin conversion, cell keys, and coordinated origin shifts.
+
+Public API:
+
+    ToRender(WorldPosition,RenderOrigin)->Result<RenderPosition,CoordinateError>;
+    ToWorld(RenderPosition,RenderOrigin)->Result<WorldPosition,CoordinateError>;
+    Canonicalize(WorldPosition)->Result<WorldPosition,CoordinateError>;
+    RequestRebase(WorldPosition observer);
+    PreparePendingRebase()->RebaseTransaction;
+    Commit(RebaseTransaction,span<RebaseParticipant>);
+    Origin() const->RenderOrigin;
+
+Internal state and components:
+
+    - double origin.
+    - cell size.
+    - pending shift.
+    - origin generation.
+    - registered shift participants.
+    - conversion bounds.
+
+Lifecycle and ownership:
+
+    World owns the coordinate service. Participants register RAII tokens; shift
+    prepare validates all participants and commit publishes one
+    OriginGeneration. Authoritative cell/local positions are not rewritten.
+
+Error behavior:
+
+    Non-finite/out-of-range/non-canonical coordinates, stale origin generation,
+    or participant prepare failure return CoordinateError before commit.
+
+Threading and timing constraints:
+
+    rebase only at simulation/frame safe point with GPU idle not required when snapshots are generation-tagged; render packets carry generation
+
+Dependencies:
+
+    - None at ownership level.
+    - Physics, terrain, ocean, camera, audio, and rendering register
+      RebaseParticipant interfaces and consume immutable RenderOrigin values.
+
+Tests:
+
+    - round-trip precision.
+    - negative cells.
+    - threshold.
+    - participant ordering.
+    - generation mismatch.
+    - physics/terrain alignment.
+
+Implementation rules:
+
+    - Keep implementation-only types out of public headers.
+    - Use RAII and generational IDs; do not expose owning raw pointers.
+    - Validate descriptions before allocating or mutating state.
+    - Publish complete snapshots/generations rather than partially updated data.
+    - Add diagnostics for failure context without making logging a dependency
+      of correctness.
+
+Canonical integration contract:
+
+    Normative coordinate authority. WorldPosition uses signed WorldCellKey plus
+    double local metres, +X east/+Y north/+Z up. Render positions are float
+    offsets from a double high/low origin and always carry OriginGeneration.
+    Rebase commits at P3; GPU idle is not required because in-flight packets
+    retain the old generation through their GpuCompletionSet.
+
+    See ..\CANONICAL_CONVENTIONS.txt, ..\FRAME_THREADING_MODEL.txt, and
+    ..\ocean\87_ocean_conventions_invariants.txt.

@@ -1,0 +1,82 @@
+ASSET COOKER CLASS DESIGN
+=========================
+
+Class:
+
+    AssetCooker
+
+Purpose:
+
+    Convert source assets into deterministic, versioned runtime artifacts and dependency manifests.
+
+Public API:
+
+    Cook(request)->Result<CookReceipt,CookError>;
+    CookBatch(requests)->Future<Result<CookBatchReceipt,CookError>>;
+    InspectArtifact(path)->Result<ArtifactInfo,CookError>;
+    NeedsCook(source,options)->Result<bool,CookError>;
+    RegisterProcessor(type,IAssetProcessor);
+    Cancel(batch);
+
+Internal state and components:
+
+    - processor registry.
+    - content hashes.
+    - tool/schema versions.
+    - dependency DAG.
+    - artifact writer.
+    - diagnostics.
+    - incremental cache.
+
+Lifecycle and ownership:
+
+    Cooker owns temporary build products inside the project cache and atomically
+    publishes outputs plus an AssetRegistry manifest. Processors/importers are
+    injected interfaces with scoped contexts; they do not own/call the cooker.
+
+Error behavior:
+
+    Source/processor/schema/dependency/cycle/I/O/cancellation failures return
+    CookError and remove unpublished products. Processor exceptions are caught
+    at the cook-operation boundary and retain causal diagnostics.
+
+Threading and timing constraints:
+
+    parallel jobs respect dependency DAG; same output key serialized; deterministic mode fixes ordering/seeds/timestamps
+
+Dependencies:
+
+    - VirtualFileSystem.
+    - Registered IAssetProcessor/IModelImporter/tool-format interfaces.
+    - SchemaSerialization.
+    - JobSystem.
+
+Tests:
+
+    - incremental hit/miss.
+    - deterministic byte equality.
+    - dependency recook.
+    - processor failure cleanup.
+    - atomic publish.
+    - cycle.
+    - cancellation.
+
+Implementation rules:
+
+    - Keep implementation-only types out of public headers.
+    - Use RAII and generational IDs; do not expose owning raw pointers.
+    - Validate descriptions before allocating or mutating state.
+    - Publish complete snapshots/generations rather than partially updated data.
+    - Add diagnostics for failure context without making logging a dependency
+      of correctness.
+
+Canonical integration contract:
+
+    Normative offline tool; it is not a runtime Renderer/Texture/Collision
+    owner. Deterministic mode fixes processor/tool/schema versions, source
+    bytes, units/datums, sorting, compression settings, seeds, and timestamps.
+    AssetId maps logical identity; content hash identifies one artifact version.
+    Artifact/manifest publication is atomic and dependency DAG cycles fail.
+
+    See 55_model_importer.txt, 69_asset_registry.txt,
+    ..\CANONICAL_CONVENTIONS.txt, and ..\ERROR_RESULT_POLICY.txt.

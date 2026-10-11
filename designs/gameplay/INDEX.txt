@@ -1,0 +1,36 @@
+GAMEPLAY SUBSYSTEM INDEX
+========================
+
+Command and ownership model
+---------------------------
+
+GameplayCommandBus is the only ingress for state-changing player, UI, debug,
+network, and deferred AI commands. It owns queued values until P2 dispatch; it
+does not own producers, world state, SaveSystem, or network transport.
+
+NavigationGraph owns streamable immutable graph tiles. NavigationSystem owns
+route requests/results. BehaviorTreeRuntime and AIVesselController own AI
+runtime state only. InventoryEconomySystem owns inventory/wallet/transaction
+state. MissionSystem owns mission instances and requests inventory reward
+transactions; inventory has no MissionSystem dependency. CombatSystem is an
+optional command/event consumer.
+
+Documents
+---------
+
+32_navigation_system.txt, 33_ai_vessel_controller.txt,
+34_mission_system.txt, 35_inventory_economy.txt,
+59_gameplay_command_bus.txt, 61_navigation_graph.txt,
+62_behavior_tree.txt, and 63_combat_system.txt.
+
+Phases and cycle breaks
+-----------------------
+
+Commands latch P2, AI/control runs P5, physics P7, gameplay transactions/events
+P8, and persistence snapshots P11. Handlers never recursively dispatch the
+same tick. Mission and economy exchange typed transaction results/events.
+Navigation jobs consume immutable graph/weather/hazard snapshots. Streaming
+controls tile availability; NavigationGraph retains pinned tile blocks.
+
+See ..\FRAME_THREADING_MODEL.txt and ..\ERROR_RESULT_POLICY.txt.
+

@@ -1,0 +1,81 @@
+DESCRIPTOR ALLOCATOR CLASS DESIGN
+=================================
+
+Class:
+
+    DescriptorAllocator
+
+Purpose:
+
+    Provide persistent and frame-transient Vulkan descriptor allocation with layout caching and bounded growth.
+
+Public API:
+
+    GetLayout(LayoutDescription) -> Result<LayoutHandle,DescriptorError>;
+    AllocatePersistent(layout)->Result<DescriptorSetHandle,DescriptorError>;
+    AllocateTransient(FrameSlotId,layout,count)
+        ->Result<DescriptorSetHandle,DescriptorError>;
+    Write(set,writes)->Result<void,DescriptorError>;
+    FreePersistent(set,GpuCompletionSet lastUse);
+    ResetFrame(FrameSlotId,const CompletedGpuTimelines&);
+    Statistics();
+
+Internal state and components:
+
+    - canonical layout keys/cache.
+    - pool classes by descriptor counts/flags.
+    - free lists.
+    - frame arenas.
+    - bindless table and generation IDs when supported.
+
+Lifecycle and ownership:
+
+    Layout handles are immutable generation handles. Transient sets expire only
+    when the supplying frame slot's completion set finishes. Persistent sets
+    explicitly transfer retirement payloads to GpuRetirementQueue.
+
+Error behavior:
+
+    Invalid layout/write, stale set, unsupported flags, pool/budget exhaustion,
+    and backend failure return DescriptorError. No default set is returned on
+    exhaustion.
+
+Threading and timing constraints:
+
+    allocation synchronization is per arena; frame arena accessed by render thread; updates obey update-after-bind capabilities
+
+Dependencies:
+
+    - VulkanRuntime.
+    - GpuRetirementQueue/FrameSlot values supplied by Renderer.
+    - DebugDiagnostics.
+
+Tests:
+
+    - layout canonicalization.
+    - pool growth.
+    - exhaustion.
+    - transient reset.
+    - invalid write type/count.
+    - bindless stale generation.
+
+Implementation rules:
+
+    - Keep implementation-only types out of public headers.
+    - Use RAII and generational IDs; do not expose owning raw pointers.
+    - Validate descriptions before allocating or mutating state.
+    - Publish complete snapshots/generations rather than partially updated data.
+    - Add diagnostics for failure context without making logging a dependency
+      of correctness.
+
+Canonical integration contract:
+
+    Normative descriptor owner. It has no ShaderPipelineManager or FrameManager
+    ownership dependency: shaders consume layout services; frame orchestration
+    passes FrameSlotId and completion values. Descriptor writes are render-
+    thread or explicitly synchronized, validate complete reflected type/count,
+    and obey update-after-bind capability. Bindless indices are typed
+    generations and cannot silently alias after reuse.
+
+    See ..\CANONICAL_CONVENTIONS.txt, 20_frame_manager.txt, and
+    ..\rendering\04_shader_pipeline_manager.txt.

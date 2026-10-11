@@ -1,0 +1,80 @@
+PARTICLE SYSTEM CLASS DESIGN
+============================
+
+Class:
+
+    ParticleSystem
+
+Purpose:
+
+    Simulate and render bounded visual particle emitters for spray, rain, smoke, fire, and debris.
+
+Public API:
+
+    CreateEmitter(desc)->EmitterId;
+    DestroyEmitter(id);
+    SetTransform(id,...);
+    Emit(id,count);
+    Update(RenderDeltaSeconds,view);
+    AddPasses(renderGraph);
+    Statistics();
+
+Internal state and components:
+
+    - emitter slots.
+    - spawn accumulators.
+    - CPU/GPU particle pools.
+    - free lists.
+    - indirect draw args.
+    - sort buffers.
+    - deterministic seeds.
+
+Lifecycle and ownership:
+
+    emitters generational; GPU buffers owned by system and retired by frame ticket; particles die automatically; gameplay never depends on particles
+
+Error behavior:
+
+    Invalid/stale emitter, invalid units, capacity, asset, or GPU failure returns
+    ParticleError. Optional visual overflow drops stable lowest-priority spawns
+    with counters; gameplay never observes particle success.
+
+Threading and timing constraints:
+
+    visual update uses render delta; GPU compute/render synchronization explicit; CPU emitter commands queued; hard capacity with drop counters
+
+Dependencies:
+
+    - RenderGraph.
+    - GpuResourceManager.
+    - TextureSystem.
+    - JobSystem.
+
+Tests:
+
+    - spawn rates.
+    - deterministic seeded CPU path.
+    - capacity overflow.
+    - emitter destruction.
+    - depth sorting.
+    - GPU barrier declarations.
+
+Implementation rules:
+
+    - Keep implementation-only types out of public headers.
+    - Use RAII and generational IDs; do not expose owning raw pointers.
+    - Validate descriptions before allocating or mutating state.
+    - Publish complete snapshots/generations rather than partially updated data.
+    - Add diagnostics for failure context without making logging a dependency
+      of correctness.
+
+Canonical integration contract:
+
+    Normative presentation-only owner. Emit commands cross to render as bounded
+    immutable values carrying WorldPosition/OriginGeneration, SI velocity, and
+    VisualSeed. Simulation-authored event identity and aggregate energy may be
+    deterministic; individual GPU order is not authoritative. Render delta may
+    update particles because results never feed physics/gameplay/save/network.
+    GPU state and retirement are declared through RenderGraph/GpuCompletionSet.
+
+    See ..\CANONICAL_CONVENTIONS.txt, ..\FRAME_THREADING_MODEL.txt, and INDEX.txt.

@@ -1,0 +1,83 @@
+SIMULATION CLOCK CLASS DESIGN
+=============================
+
+Class:
+
+    SimulationClock
+
+Purpose:
+
+    Convert real elapsed time into bounded fixed simulation steps and a render interpolation factor.
+
+Public API:
+
+    Reset(MonotonicTimePoint now);
+    Advance(MonotonicTimePoint now)->Result<StepPlan,ClockError>;
+    FixedDelta() const->FixedDeltaSeconds;
+    Tick() const->TickId;
+    Alpha() const->RenderInterpolationAlpha;
+    Pause();
+    Resume();
+    SetTimeScale(scale);
+    ConsumeStep();
+
+Internal state and components:
+
+    - last timestamp.
+    - accumulator.
+    - fixed delta.
+    - tick index.
+    - max catch-up steps.
+    - pause/time scale.
+    - dropped-time counter.
+
+Lifecycle and ownership:
+
+    ApplicationHost owns the clock. StepPlan is a value consumed once in P1;
+    TickId is monotonically increasing. The rational fixed period is immutable
+    while a world is active and is stored in save/network/ocean epochs.
+
+Error behavior:
+
+    Invalid period, time scale, non-monotonic input, or illegal lifecycle returns
+    ClockError. A large elapsed interval is bounded by explicit catch-up/drop
+    policy and reports dropped duration; it is not silently consumed.
+
+Threading and timing constraints:
+
+    Main loop only; fixed period immutable while world active; clamp huge
+    elapsed time; RenderInterpolationAlpha is in [0,1).
+
+Dependencies:
+
+    - Monotonic platform clock value.
+    - DebugDiagnostics.
+
+Tests:
+
+    - steady cadence.
+    - jitter accumulation.
+    - max catch-up clamp.
+    - pause/resume no spike.
+    - time scale.
+    - alpha.
+    - monotonic tick.
+
+Implementation rules:
+
+    - Keep implementation-only types out of public headers.
+    - Use RAII and generational IDs; do not expose owning raw pointers.
+    - Validate descriptions before allocating or mutating state.
+    - Publish complete snapshots/generations rather than partially updated data.
+    - Add diagnostics for failure context without making logging a dependency
+      of correctness.
+
+Canonical integration contract:
+
+    Normative time authority. FixedDelta drives P2-P12 only.
+    RenderInterpolationAlpha is clamped to [0,1) and drives P14 only. Render or
+    audio callback delta never advances physics, gameplay, weather, ocean,
+    persistence, or network state.
+
+    See ..\CANONICAL_CONVENTIONS.txt, ..\FRAME_THREADING_MODEL.txt, and
+    ..\INTEGRATION_ACCEPTANCE_MATRIX.txt.

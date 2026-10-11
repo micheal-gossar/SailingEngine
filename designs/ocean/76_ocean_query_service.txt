@@ -1,0 +1,153 @@
+OCEAN QUERY SERVICE CLASS DESIGN
+================================
+
+Class
+-----
+
+    OceanQueryService
+
+Purpose
+-------
+
+Provide one allocation-free, deterministic interface for gameplay water height,
+surface geometry, flow, wave orbital velocity, depth, immersion, and confidence
+while giving visual GPU consumers an explicitly non-authoritative matched path.
+
+Public API
+----------
+
+    OceanQueryTicket BeginBatch(
+        OceanTick, OceanQueryPolicy, uint32_t maximumSamples);
+    Result<void, OceanError> Add(
+        OceanQueryTicket, span<const WorldPosition>, OceanFieldMask);
+    Result<OceanQueryResults, OceanError> ExecuteCpu(OceanQueryTicket) const;
+    GpuQueryHandle SubmitVisualGpu(
+        const GpuOceanQueryBatch&, RenderGraphBuilder&);
+    QueryConformanceReport CompareCpuGpu(const ConformanceBatch&) const;
+
+OceanQueryPolicy is one of AuthoritativePhysics, DeterministicGameplay,
+NavigationApproximation, VisualCurrentFrame, or DiagnosticReference. Policies
+are never inferred from the calling thread.
+
+Key data structures
+-------------------
+
+OceanQueryPoint uses integer WorldCellKey plus double local coordinates.
+OceanQueryResult contains surface elevation/displacement, geometric normal and
+tangents, surface and depth-averaged velocity, wave orbital velocity, vertical
+velocity, water depth, acceleration where requested, region classification,
+confidence/validity mask, and complete OceanGeneration provenance.
+OceanRegionBlend stores deep/coastal/land/interior masks that form a
+partition of unity. QueryScratch is caller- or frame-arena-owned SoA memory.
+
+Algorithms and models
+---------------------
+
+Resolve vertical datum and region first. Sample mean level/tide/current from
+OceanEnvironmentForcing. Offshore, analytically sum the versioned CPU mode set
+from DeepWaterSpectralOcean, including displacement derivatives and orbital
+velocity. Nearshore, reconstruct surface/flow from the two bracketing
+conservative CoastalOceanSolver snapshots and phase boundary components.
+Apply the energy-conserving region blend, then add OceanInteractionSystem's
+zero-mean perturbation and expose Stokes drift separately.
+
+Height inversion for a horizontally displaced spectral surface uses a bounded
+Newton iteration in local coordinates with a bracketed fallback; returning the
+parametric height at the unshifted point is forbidden for authoritative
+buoyancy. Normals come from analytic/Jacobian or solver gradients, not a screen
+normal. Land/dry cells return Dry with terrain datum, not a fictitious ocean.
+
+The GPU query kernel consumes the same packed coefficients, phase epoch,
+coordinate split, blend atlas, and composition order. It is intended for spray,
+foam, rendering, and crowds. Floating-point contraction and approximation
+differences are measured; GPU results are never used for authoritative
+collision, save decisions, or network state.
+
+The authoritative physics band, math/version flags, and coastal/wake generation
+are frozen in OceanEpoch. CPU evaluates that band in deterministic signed-k and
+source order using the declared scalar/SIMD contraction policy. GPU surface
+displacement is decomposed into MatchedPhysicsBand plus VisualResidualBand.
+At vessel contact, renderers may visually retain the residual but gameplay
+waterline/debug overlays show the matched band and its certified error; quality
+never moves modes between bands. A conformance packet hashes packed inputs and
+compares intermediate phase/mode sums before final fields, preventing a visually
+similar but mathematically divergent shader from passing.
+
+Update rates, threading, and GPU ownership
+-----------------------------------------
+
+CPU views are immutable per 60 Hz ocean tick and safe on physics/job threads.
+Tickets are thread-affine builders; execution is read-only and batch-parallel.
+Visual GPU queries run after ocean compute and before dependent render passes,
+owned as transient RenderGraph buffers. Results expire with the frame and are
+not mapped to CPU. Diagnostic readback uses a rate-limited staging ring and
+does not stall queues. Readback has at least two-frame latency, includes source
+and origin generations, expires if late, and is consumed only by diagnostics.
+File 88 owns barriers, queue-family transfers, and staging retirement.
+
+Lifecycle and dependencies
+--------------------------
+
+Construct after OceanDomain publishes its first coherent generation. Acquire
+module snapshot handles together; mixing generations fails before sampling.
+On origin shift, cell/local positions remain unchanged and only GPU relative-
+origin packing changes. At shutdown, reject new tickets and allow existing CPU
+views to retire. See ..\sailing\07_buoyancy_system.txt,
+..\sailing\49_hydrodynamics.txt, ..\core\54_world_coordinate.txt,
+72_ocean_domain_coordinator.txt, 74_deep_water_spectral_ocean.txt,
+75_coastal_ocean_solver.txt, and 77_ocean_interaction_wakes.txt.
+
+Failure and error behavior
+--------------------------
+
+Errors include InvalidPolicy, OutputCapacity, TickUnavailable,
+MixedGeneration, CoordinateOutOfRange, MissingAuthoritativeTile,
+NonConvergentSurfaceInversion, UnsupportedField, DryPoint, GpuQueueFull,
+PhysicsBandMismatch, and ReadbackGenerationExpired.
+Each point has status independently; one missing tile does not erase valid
+batch results. Authoritative policies never fall back to visual GPU state.
+Navigation policy may use a named conservative approximation and confidence.
+Non-finite inputs are rejected and outputs are initialized to explicit invalid.
+
+Deterministic and testing strategy
+----------------------------------
+
+Mode/tile/source reductions have fixed order; batch partitioning cannot change
+results. Tests compare scalar, SIMD, single, batch, and reordered batches;
+finite-difference derivatives; displaced-surface inversion; deep/coastal blend
+energy; dry shoreline; generation mismatch; large/negative cells; origin
+shifts; tick interpolation; and save replay. A stratified GPU conformance grid
+covers wave phase, crest, current, coast, wake, and coordinate extremes with
+per-field absolute/relative/ULP budgets.
+Conformance also runs GPU-disabled, one/unified/split queues, delayed compute,
+different graphics quality, and shader fast-math variants. Authoritative result
+hashes must remain exact on the supported deterministic CPU build.
+
+Performance and scalability
+---------------------------
+
+Use SoA inputs/results, Morton grouping by ocean cell, vectorized mode blocks,
+coastal tile caches keyed by generation, preallocated scratch, and field masks
+to skip derivatives. Buoyancy submits all vessel points in one or few batches.
+Navigation may query lower-frequency modes/coarse coastal mips with conservative
+bounds. Track samples/s, modes/sample, cache misses, inversion iterations,
+policy counts, degraded results, and GPU queue/readback cost.
+
+Integration points
+------------------
+
+Buoyancy, hydrodynamics, AI navigation, anchoring, audio emitters, marine agents,
+and debug probes use CPU policies. Surface, habitat, effects, and particle
+passes use visual GPU batches. Network replication transmits vessel/ocean epoch
+inputs, not dense sampled water. Validation owns conformance thresholds and
+capture selection.
+
+Engine-wide integration contract
+--------------------------------
+
+Normative composition/query owner; it owns no producer state. Tickets retain
+one coherent OceanSimulationView and caller scratch for the call/batch only.
+Authoritative policies are P6 CPU reads of generation N; visual GPU work is
+P15 transient and cannot be read back into simulation. WorldPosition, SI,
+TickId, Result/Error, generation, and per-queue GPU rules come from
+..\CANONICAL_CONVENTIONS.txt, ..\ERROR_RESULT_POLICY.txt, and file 87.

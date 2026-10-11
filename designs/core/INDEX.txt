@@ -1,0 +1,50 @@
+CORE SUBSYSTEM INDEX
+====================
+
+Scope and authority
+-------------------
+
+Core supplies composition and domain-neutral services. Root contracts in
+..\CANONICAL_CONVENTIONS.txt, ..\FRAME_THREADING_MODEL.txt,
+..\OWNERSHIP_LIFETIME_SHUTDOWN.txt, and ..\ERROR_RESULT_POLICY.txt are
+normative.
+
+Documents
+---------
+
+01_memory_manager.txt:
+    Vulkan allocation backend only; no GPU-lifetime guessing.
+13_save_system.txt:
+    Atomic file transaction and restore bundle; state remains provider-owned.
+29_job_system.txt:
+    Cancellable CPU execution over immutable inputs.
+31_configuration_settings.txt:
+    Layered settings and safe-point publication.
+37_simulation_clock.txt:
+    Sole wall-time to TickId/FixedDelta/RenderInterpolationAlpha authority.
+54_world_coordinate.txt:
+    WorldPosition and OriginGeneration conversion/rebase transaction.
+57_application_host.txt:
+    Composition root and P0-P16 loop.
+58_operation_runner.txt:
+    Private Vulkan bootstrap prerequisite runner.
+68_schema_serialization.txt:
+    Bounded codecs, schemas, and migration values.
+
+Dependency direction
+--------------------
+
+SimulationClock and JobSystem are independent foundation services. JobSystem
+does not depend on SimulationClock. SchemaSerialization depends only on frozen
+schemas/codecs. SaveSystem consumes registered immutable state providers; world
+and gameplay systems do not depend on it for runtime behavior. ApplicationHost
+is the only owner of the service graph.
+
+Acceptance
+----------
+
+Clock/replay independence from render cadence, bounded parse/allocation,
+transaction rollback, worker cancellation, rebase invariance, partial
+construction, and shutdown ordering must pass
+..\INTEGRATION_ACCEPTANCE_MATRIX.txt.
+

@@ -1,0 +1,79 @@
+NAVIGATION SYSTEM CLASS DESIGN
+==============================
+
+Class:
+
+    NavigationSystem
+
+Purpose:
+
+    Plan vessel routes over water while respecting draft, land, hazards, weather costs, and streaming boundaries.
+
+Public API:
+
+    RequestRoute(RouteRequest)->RouteHandle;
+    Cancel(handle);
+    Poll(handle)->RouteStatus;
+    Route(handle) const;
+    UpdateHazards(snapshot);
+    ValidateSegment(a,b,vessel);
+
+Internal state and components:
+
+    - coarse sea graph.
+    - local navigation meshes/grids.
+    - spatial hazard index.
+    - asynchronous searches.
+    - route cache keyed by world generation.
+
+Lifecycle and ownership:
+
+    graph tiles shared immutable; request owns result until release; streaming unload invalidates affected cache entries, not active copied routes
+
+Error behavior:
+
+    Invalid/stale request, unavailable tile, no route, cancellation, capacity,
+    and snapshot generation mismatch return RouteStatus/Error values. NoRoute
+    is expected status and never a fabricated straight path.
+
+Threading and timing constraints:
+
+    search runs as jobs; world snapshots immutable; results publish at simulation boundary; deterministic tie-breaking
+
+Dependencies:
+
+    - NavigationGraph.
+    - Immutable terrain/depth/weather/hazard snapshots.
+    - WorldStreamingManager lease/readiness values.
+    - JobSystem.
+
+Tests:
+
+    - route around island.
+    - draft rejection.
+    - no route.
+    - cancellation.
+    - unloaded tile request.
+    - hazard replan.
+    - stable tie.
+    - cache invalidation.
+
+Implementation rules:
+
+    - Keep implementation-only types out of public headers.
+    - Use RAII and generational IDs; do not expose owning raw pointers.
+    - Validate descriptions before allocating or mutating state.
+    - Publish complete snapshots/generations rather than partially updated data.
+    - Add diagnostics for failure context without making logging a dependency
+      of correctness.
+
+Canonical integration contract:
+
+    Normative RouteHandle owner. Requests contain WorldPosition, vessel draft
+    metres, constraints, TickId/world generation, and deterministic tie policy.
+    Jobs retain immutable NavigationGraph/terrain/weather snapshots; P5
+    publishes complete routes. Missing/unloaded data yields Pending/
+    Unavailable with confidence and may request streaming, never assumes water.
+    Active copied routes survive tile unload; cache entries do not.
+
+    See ..\CANONICAL_CONVENTIONS.txt, ..\world\INDEX.txt, and INDEX.txt.

@@ -1,0 +1,73 @@
+OPERATION RUNNER CLASS DESIGN
+=============================
+
+Class:
+
+    OperationRunner
+
+Purpose:
+
+    Execute self-declared initialization prerequisites exactly once, detect cycles, and enrich failures with operation/validation context.
+
+Public API:
+
+    Run<Operation>(state);
+    Require<Dependency>(state);
+    Status(type) const;
+    ActiveStack() const;
+    ResetRuntimeOperation(key);
+
+Internal state and components:
+
+    - operation type-to-state map.
+    - DFS active stack.
+    - stored exception.
+    - sequence ranges into debug log.
+    - operation result cache.
+
+Lifecycle and ownership:
+
+    Private value owned by VulkanRuntime::Impl. Bootstrap state owns RAII
+    results; failed partial results unwind naturally; one-time and rebuild
+    scopes are separate. OperationRunner does not own or depend on a constructed
+    VulkanRuntime.
+
+Error behavior:
+
+    Operations return Result. Internal exceptions are caught at Run, associated
+    with the active prerequisite chain/diagnostic sequence, and translated to
+    BootstrapError while RAII rolls back partial state.
+
+Threading and timing constraints:
+
+    bootstrap thread only; callbacks may append diagnostics concurrently; operation code must be idempotent per runner scope
+
+Dependencies:
+
+    - Vulkan bootstrap state/types (not VulkanRuntime ownership).
+    - DebugDiagnostics.
+
+Tests:
+
+    - dependency diamond once.
+    - direct/indirect cycle.
+    - failed prerequisite blocks dependent.
+    - nested exception/chain.
+    - validation range.
+    - partial RAII cleanup.
+
+Implementation rules:
+
+    - Keep implementation-only types out of public headers.
+    - Use RAII and generational IDs; do not expose owning raw pointers.
+    - Validate descriptions before allocating or mutating state.
+    - Publish complete snapshots/generations rather than partially updated data.
+    - Add diagnostics for failure context without making logging a dependency
+      of correctness.
+
+Canonical integration contract:
+
+    Normative private bootstrap helper, not a global service. Runs on the
+    bootstrap thread before VulkanRuntime publication. The prerequisite graph is
+    acyclic and deterministic; callbacks are `noexcept` at C/Vulkan boundaries.
+    See ..\ERROR_RESULT_POLICY.txt and ..\vulkan\16_vulkan_runtime.txt.

@@ -1,0 +1,79 @@
+WINDOW PLATFORM CLASS DESIGN
+============================
+
+Class:
+
+    WindowPlatform
+
+Purpose:
+
+    Own GLFW process lifetime and one desktop window while isolating native platform details.
+
+Public API:
+
+    PlatformRuntime::Create()->Result<PlatformRuntime,PlatformError>;
+    CreateWindow(WindowDescription) -> Result<unique_ptr<Window>,PlatformError>;
+    Window::PollEvents();
+    ShouldClose() const;
+    FramebufferExtent() const;
+    CreateVulkanSurface(instance);
+    SetCursorMode(mode);
+
+Internal state and components:
+
+    - GLFW lifetime reference.
+    - GLFWwindow pointer.
+    - logical/framebuffer sizes.
+    - focus/minimize/DPI state.
+    - queued window events.
+
+Lifecycle and ownership:
+
+    PlatformRuntime initializes/terminates GLFW once; Window uniquely owns GLFWwindow; Vulkan surface is returned to VulkanRuntime ownership
+
+Error behavior:
+
+    Initialization/window/surface/input-event capacity/backend failures return
+    PlatformError with original backend context. All GLFW callbacks are
+    `noexcept`, enqueue bounded values, and never log recursively or call engine
+    services.
+
+Threading and timing constraints:
+
+    GLFW calls and callbacks run on main thread; callbacks enqueue events and never invoke gameplay; zero framebuffer extent means suspended
+
+Dependencies:
+
+    - DebugDiagnostics.
+    - InputActionSystem consumes window events.
+    - VulkanRuntime consumes Window::CreateVulkanSurface; no reverse dependency.
+
+Tests:
+
+    - init failure.
+    - create/destroy.
+    - resize/DPI events.
+    - minimized extent.
+    - required extension retrieval.
+    - surface failure.
+    - callback reentrancy.
+
+Implementation rules:
+
+    - Keep implementation-only types out of public headers.
+    - Use RAII and generational IDs; do not expose owning raw pointers.
+    - Validate descriptions before allocating or mutating state.
+    - Publish complete snapshots/generations rather than partially updated data.
+    - Add diagnostics for failure context without making logging a dependency
+      of correctness.
+
+Canonical integration contract:
+
+    Normative platform/window owner. Main thread exclusively calls GLFW. Window
+    owns GLFWwindow; VulkanRuntime owns the created VkSurfaceKHR while Window
+    outlives it. Zero framebuffer extent is Suspended status; DPI/logical/
+    framebuffer extents are distinct typed values. Platform callbacks never
+    throw across C or mutate input/gameplay/rendering directly.
+
+    See ..\ERROR_RESULT_POLICY.txt, ..\vulkan\16_vulkan_runtime.txt, and
+    ..\OWNERSHIP_LIFETIME_SHUTDOWN.txt.

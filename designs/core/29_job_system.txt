@@ -1,0 +1,82 @@
+JOB SYSTEM CLASS DESIGN
+=======================
+
+Class:
+
+    JobSystem
+
+Purpose:
+
+    Execute cancellable CPU work with priorities, dependencies, work stealing, and clean shutdown.
+
+Public API:
+
+    Start(workerCount);
+    Submit(JobDescription,fn)->JobHandle;
+    Then(prereqs,fn);
+    Cancel(handle);
+    Wait(handle);
+    TryRunOne();
+    Shutdown(mode);
+    Statistics();
+
+Internal state and components:
+
+    - worker deques.
+    - global injection queues.
+    - dependency counters.
+    - completion events.
+    - cancellation tokens.
+    - exception slots.
+    - task storage pool.
+
+Lifecycle and ownership:
+
+    system owns jobs until completion and handles retain shared completion state; shutdown joins workers; captured resources use explicit shared ownership
+
+Error behavior:
+
+    Submit/cancel/wait return typed Result or Poll values. The task wrapper
+    catches all exceptions and stores a causal JobError; no exception crosses a
+    subsystem boundary. Failed prerequisites deterministically cancel dependent
+    jobs unless their description names an error-handling continuation.
+
+Threading and timing constraints:
+
+    worker-safe API; waiting worker helps execute; render/simulation threads must not block except controlled startup/shutdown; jobs cannot access thread-confined Vulkan pools
+
+Dependencies:
+
+    - DebugDiagnostics.
+    - No SimulationClock dependency; TickId is ordinary immutable job input.
+
+Tests:
+
+    - dependency diamond.
+    - exactly-once.
+    - cancellation before/start.
+    - exception propagation.
+    - priority fairness.
+    - nested wait.
+    - shutdown drain/cancel.
+
+Implementation rules:
+
+    - Keep implementation-only types out of public headers.
+    - Use RAII and generational IDs; do not expose owning raw pointers.
+    - Validate descriptions before allocating or mutating state.
+    - Publish complete snapshots/generations rather than partially updated data.
+    - Add diagnostics for failure context without making logging a dependency
+      of correctness.
+
+Canonical integration contract:
+
+    Normative foundation service. Jobs read immutable snapshots and write
+    unpublished private output; the owning P0-P16 phase joins and publishes.
+    Handles are typed generations. Worker count and completion order cannot
+    change authoritative results; callers provide stable reductions. Blocking
+    I/O is restricted to I/O-class jobs, and render/simulation threads may wait
+    only at declared join points.
+
+    See ..\CANONICAL_CONVENTIONS.txt, ..\FRAME_THREADING_MODEL.txt,
+    ..\ERROR_RESULT_POLICY.txt, and INDEX.txt.

@@ -1,0 +1,80 @@
+AI VESSEL CONTROLLER CLASS DESIGN
+=================================
+
+Class:
+
+    AIVesselController
+
+Purpose:
+
+    Convert AI goals and routes into bounded sail, rudder, throttle, and avoidance controls.
+
+Public API:
+
+    Attach(entity,profile);
+    Detach(entity);
+    SetGoal(entity,goal);
+    Step(TickId,FixedDeltaSeconds);
+    DebugState(entity);
+    OnEvent(event);
+
+Internal state and components:
+
+    - per-vessel blackboard.
+    - behavior state.
+    - route handle.
+    - waypoint cursor.
+    - PID controllers.
+    - collision-avoidance contacts.
+    - stuck timers.
+
+Lifecycle and ownership:
+
+    controller owns runtime AI state, never vessel entity; goal/route data copied; detach cancels navigation requests
+
+Error behavior:
+
+    Invalid/stale EntityId, profile, route/world generation, planning capacity,
+    or infeasible controls return AIError/status. Safe slow/hold behavior is a
+    named command policy, not silent route success.
+
+Threading and timing constraints:
+
+    fixed simulation step only; expensive planning asynchronous; control output for tick N uses published route/world snapshot
+
+Dependencies:
+
+    - VesselStateSnapshot and GameplayCommandBus.
+    - NavigationSystem.
+    - BehaviorTreeRuntime.
+    - Immutable physics contact and weather snapshots.
+
+Tests:
+
+    - waypoint following.
+    - tack decision.
+    - collision avoidance.
+    - route failure.
+    - stuck recovery.
+    - detach with pending route.
+    - control bounds.
+
+Implementation rules:
+
+    - Keep implementation-only types out of public headers.
+    - Use RAII and generational IDs; do not expose owning raw pointers.
+    - Validate descriptions before allocating or mutating state.
+    - Publish complete snapshots/generations rather than partially updated data.
+    - Add diagnostics for failure context without making logging a dependency
+      of correctness.
+
+Canonical integration contract:
+
+    Normative AI runtime-state/command producer. P5 consumes generation-tagged
+    TickId, vessel/route/weather/contact snapshots and emits a bounded
+    VesselControlCommand through GameplayCommandBus; it never mutates
+    VesselSystem/PhysicsWorld directly. Route jobs publish later generations
+    and never retain mutable blackboards. Stable EntityId ordering, fixed
+    reductions, and WorldSeed128-derived streams define authoritative replay.
+
+    See 59_gameplay_command_bus.txt, ..\sailing\25_vessel_system.txt, and INDEX.txt.

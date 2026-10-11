@@ -1,0 +1,94 @@
+BUOYANCY SYSTEM CLASS DESIGN
+============================
+
+Class:
+
+    BuoyancySystem
+
+Purpose:
+
+    Calculate buoyancy and hydrodynamic damping for vessel rigid bodies using
+    batched, coherent OceanQueryService samples from ocean generation N.
+
+Public API:
+
+    void RegisterVessel(EntityId entity, const BuoyancyDescription& description);
+    void UnregisterVessel(EntityId entity);
+    void FixedUpdate(
+        PhysicsWorld& physics,
+        const OceanSimulationView& ocean,
+        FixedDeltaSeconds fixedDelta);
+    BuoyancyDebugData DebugData(EntityId entity) const;
+
+BuoyancyDescription:
+
+    Local-space sample points.
+    Volume/area weight per point.
+    Maximum immersion depth.
+    Water density.
+    Linear damping coefficients.
+    Angular damping coefficients.
+
+Update algorithm:
+
+    Transform sample points to world space.
+    Batch-query ocean height, normal, and velocity.
+    Calculate immersion at each point.
+    Skip points above water.
+    Calculate displaced-volume force.
+    Calculate point velocity relative to water.
+    Calculate directional water damping.
+    Apply force at point to generate torque.
+    Accumulate debug vectors.
+
+Rules:
+
+    Execute only during fixed simulation updates.
+    Never directly set vessel velocity to fake damping.
+    Total equilibrium buoyancy should approximate vessel weight.
+    Sample weights must be normalized/validated.
+    No heap allocation in FixedUpdate.
+    Entity removal during update is deferred.
+    Missing/degraded authoritative water returns BuoyancyError and applies the
+    configured safe containment policy; it never samples GPU/render water.
+    Buoyancy and HydrodynamicsSystem use one declared force partition so water
+    damping/pressure is not applied twice.
+
+Errors:
+
+    DuplicateVessel
+    UnknownVessel
+    InvalidSampleSet
+    InvalidPhysicalConstant
+    MissingRigidBody
+
+Tests:
+
+    Stable rest in flat water.
+    Correct equilibrium waterline.
+    Roll/pitch recovery.
+    Added mass lowers vessel.
+    Off-center mass causes list.
+    Traveling wave response.
+    Frame-rate-independent fixed-step results.
+
+Dependencies:
+
+    PhysicsWorld
+    OceanQueryService
+    EntityRegistry
+    DebugDiagnostics
+
+Canonical integration contract:
+
+    Normative P6 force producer. EntityId is the registry identity; registration
+    owns only buoyancy sample/cache state. Sample positions are WorldPosition,
+    lengths metres, density kg/m3, velocity m/s, and returned forces newtons
+    with ForceProvenance. VesselSystem batches all vessel query points against
+    immutable OceanSimulationView N, then calls this allocation-free producer.
+    It cannot advance ocean/physics or retain query result pointers.
+
+    Public fallible calls return Result under ..\ERROR_RESULT_POLICY.txt.
+    See ..\CANONICAL_CONVENTIONS.txt, INDEX.txt,
+    ..\ocean\76_ocean_query_service.txt, and
+    ..\FRAME_THREADING_MODEL.txt.

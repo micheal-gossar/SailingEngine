@@ -1,0 +1,80 @@
+MATERIAL SYSTEM CLASS DESIGN
+============================
+
+Class:
+
+    MaterialSystem
+
+Purpose:
+
+    Create immutable PBR material instances, validate shader interfaces, and bind textures/constants efficiently.
+
+Public API:
+
+    Create(MaterialDescription)->MaterialHandle;
+    CreateInstance(base,overrides);
+    GetGpuBinding(material,frame);
+    Reload(assetId);
+    DefaultMaterial();
+    Describe(handle);
+
+Internal state and components:
+
+    - material definition cache.
+    - parameter blocks.
+    - texture handles/samplers.
+    - pipeline variant key.
+    - descriptor/bindless indices.
+    - generations.
+
+Lifecycle and ownership:
+
+    handles reference-counted; textures retained by material; hot reload publishes new generation while frames retain old binding
+
+Error behavior:
+
+    Invalid/stale handle, parameter/interface mismatch, missing dependency,
+    descriptor/budget, and GPU failure return MaterialError. DefaultMaterial is
+    an explicit AssetId/policy, not a silent successful substitute.
+
+Threading and timing constraints:
+
+    asset updates publish at frame boundary; binding creation render-thread or synchronized allocator; material data immutable after publication
+
+Dependencies:
+
+    - ShaderPipelineManager.
+    - DescriptorAllocator.
+    - TextureSystem.
+    - AssetManager.
+
+Tests:
+
+    - default fallback.
+    - parameter type mismatch.
+    - variant key.
+    - texture retention.
+    - hot reload generation.
+    - descriptor exhaustion.
+
+Implementation rules:
+
+    - Keep implementation-only types out of public headers.
+    - Use RAII and generational IDs; do not expose owning raw pointers.
+    - Validate descriptions before allocating or mutating state.
+    - Publish complete snapshots/generations rather than partially updated data.
+    - Add diagnostics for failure context without making logging a dependency
+      of correctness.
+
+Canonical integration contract:
+
+    Normative owner of MaterialHandle records and immutable material GPU
+    generations. AssetManager owns source/cooked records; TextureSystem and
+    ShaderPipelineManager own retained typed dependencies; DescriptorAllocator
+    owns sets/pools. P13 prepares/publishes hot reload transactionally. Frame
+    draw packets retain old bindings through GpuCompletionSet, after which this
+    owner transfers payloads to the central retirement queue.
+
+    Material values state dimensions/colorspace; scene-linear PBR values cannot
+    alias gamma-encoded texture data. See ..\assets\INDEX.txt,
+    ..\vulkan\22_descriptor_allocator.txt, and INDEX.txt.

@@ -1,0 +1,167 @@
+OCEAN INTERACTION AND WAKES CLASS DESIGN
+========================================
+
+Class
+-----
+
+    OceanInteractionSystem
+
+Purpose
+-------
+
+Couple vessel displacement, propulsors, rudders, impacts, and other bounded
+water disturbances to deep and shallow ocean representations with conserved
+volume/momentum and physically plausible Kelvin wakes, near fields, and
+reaction forces.
+
+Public API
+----------
+
+    OceanInteractorId Register(const OceanInteractorDescription&);
+    void UpdateKinematics(OceanInteractorId, const InteractorKinematics&);
+    void QueueImpulse(const WaterImpulse&);
+    void FixedUpdate(OceanTick, FixedDeltaSeconds);
+    InteractionQueryView AcquireQueryView() const;
+    InteractionRenderWork BuildRenderWork(const OceanRenderSnapshot&) const;
+    InteractionReaction ConsumeReaction(OceanInteractorId, OceanTick);
+    void Unregister(OceanInteractorId);
+
+Key data structures
+-------------------
+
+InteractorKinematics contains double pose, hull waterplane/displaced-volume
+samples, linear/angular velocity, acceleration, draft, propulsor/rudder forces,
+and vessel generation. PressureFootprint is a normalized moving pressure/
+displacement distribution. WakePatch stores cell-anchored height/velocity
+perturbation, spectrum or finite-volume fields, age, energy, and zero-mean
+correction. WakePatch also stores stable-energy estimate, CFL/dispersion limit,
+absorbing-boundary state, and last-valid generation. ConservativeSource records injected volume, momentum, impulse,
+dissipation, equal/opposite reaction, and ForceOwner. ForceOwner is exactly one
+of HydrodynamicsAlreadyApplied, OceanCouplingAppliesNextTick, PropulsorAlreadyApplied,
+or ExternalWorld. InteractionQueryView contains compact
+near-field kernels required by authoritative queries.
+
+Algorithms and models
+---------------------
+
+Derive the pressure footprint from displaced volume and waterplane change,
+rather than boat speed alone. Offshore, evolve a linear dispersive wake patch
+in Fourier space under finite-depth dispersion, producing the correct
+Froude/depth-dependent Kelvin pattern; add a bounded nonlinear near-field source
+for stern/transom flow. In shallow tiles, deposit conservative mass/momentum
+sources into CoastalOceanSolver so wakes refract, steepen, reflect, and run up.
+
+Propulsors inject directed momentum/turbulence based on applied mechanical
+force; reaction is already represented in vessel propulsion and is tagged to
+avoid double application. Hull displacement changes exchange vertical momentum
+and return hydrodynamic reaction only when ForceOwner is
+OceanCouplingAppliesNextTick. Pressure/drag already applied by
+HydrodynamicsSystem is
+recorded for the ledger and never applied a second time. An impulse ledger
+checks that water plus the single owned reaction balances external impulse
+within tolerance.
+
+The coupling is explicit in time: immutable ocean generation N drives vessel
+physics N; post-step kinematics and sources are deposited while constructing
+N+1; any ocean-owned reaction is tagged N+1. There is no recursive re-query or
+mutation of generation N. A configurable predictor may estimate the N+1 hull
+footprint, but its correction remains in the next tick and is conservation-
+checked.
+Wake energy dissipates through physical spreading, viscosity/turbulence, bottom
+drag, and breaking; dissipated energy feeds effects, not arbitrary timed sine
+amplitude.
+
+Each source is normalized by numerical integration on its destination grid
+before deposit. Time ramps bound start/stop jerk. Linear spectral patches use an
+energy-stable analytic phase step plus sponge layers whose removed energy enters
+the ledger. Nonlinear/coastal deposits obey the destination CFL and positivity
+limits; excess source is substepped or retained in the pending ledger, never
+clamped away. A wake with no source/current forcing may only conserve or lose
+the modeled energy. Growth, aliasing above the patch Nyquist limit, reflection
+from patch edges, or steepness beyond the breaking limit triggers subdivision,
+dissipation, or quarantine rather than an unstable amplitude cap.
+
+Overlapping far wake patches may merge only after conserving first moments,
+momentum, and spectral energy bands. Near patches never merge across solver
+regimes. A partition-of-unity window prevents double counting pressure near
+field, spectral wake, and shallow-water source.
+
+Update rates, threading, and GPU ownership
+-----------------------------------------
+
+Pre-step and post-step interactor kinematics latch on the two sides of the 60 Hz
+physics/ocean coupling barrier. Authoritative near fields and shallow sources update at 60 Hz; far
+offshore spectral patches may update at 15-30 Hz analytically. CPU state owns
+forces and query data. GPU compute owns high-resolution visual wake patches and
+foam advection, initialized from the same source ledger. GPU readback cannot
+change reaction forces.
+
+Lifecycle and dependencies
+--------------------------
+
+Registration validates hull descriptors and binds a generational EntityId.
+During region transitions, a handoff transaction projects a wake between deep
+and coastal forms while preserving volume/momentum, then retires the old patch.
+Unregister stops sources but leaves detached wakes to decay/stream normally.
+Cell unload serializes persistent energetic patches or conservatively exports
+their boundary flux. See ..\sailing\25_vessel_system.txt,
+..\sailing\49_hydrodynamics.txt, ..\simulation\24_physics_world.txt,
+75_coastal_ocean_solver.txt, 76_ocean_query_service.txt, and
+85_ocean_streaming_persistence.txt.
+
+Failure and error behavior
+--------------------------
+
+Errors include InvalidHullFootprint, StaleInteractor, DuplicateTick,
+SourceCapacity, CoastalTileUnavailable, ProjectionLossExceeded,
+ImpulseImbalance, EnergyGrowth, WakeCflExceeded, PatchAliasing,
+ForceOwnerConflict, and NonFiniteKinematics. Invalid interactor data disables only
+that source and reports it to vessel diagnostics. If a visual wake allocation
+fails, authoritative forces/sources continue. If a required shallow tile is
+unavailable, cap the source and retain it in a bounded pending ledger; never
+inject it offshore through land.
+
+Deterministic and testing strategy
+----------------------------------
+
+Source IDs, cell keys, and deposits are sorted before fixed-tree accumulation.
+Kernels and Fourier grids are versioned. Tests cover stationary displacement,
+constant-speed Kelvin angle and wavelength, Froude/depth transitions, start/
+stop transients, source integral, reaction sign, momentum/energy ledger,
+force-owner exactly-once application, one-tick coupling schedule,
+shallow refraction/reflection, two-wake superposition, patch merge, deep/coastal
+handoff, unregister persistence, origin shift, save/load, and CPU/GPU source
+initialization conformance.
+Stability tests include impulsive start, maximum supported Froude number, patch
+edge crossing, no-source 30-minute evolution, source substep/backlog, steepness
+breaking, Nyquist rejection, and monotonic energy after forcing stops.
+
+Performance and scalability
+---------------------------
+
+Allocate fixed wake patch pools by importance. Use sparse tiles, analytic far
+wakes, FFT patch batching, conservative low-resolution CPU kernels, and GPU
+texture arrays. Degrade remote visual resolution/update rate/foam before
+authoritative near-vessel sources. Cap per-interactor deposition radius from
+physical group velocity and age. Profile active patches, cells touched,
+spectral updates, merge/projection loss, source backlog, and GPU milliseconds.
+
+Integration points
+------------------
+
+VesselSystem and PhysicsWorld supply motion and consume tagged reaction.
+HydrodynamicsSystem/propulsion supply force provenance. Coastal and deep modules
+receive sources. QueryService composes perturbations. Effects consume
+dissipation, vorticity, aeration, and breaker events. Audio consumes cavitation,
+bow/stern, and impact events. Network/save replicate source seeds and persistent
+state, not visual textures.
+
+Engine-wide integration contract
+--------------------------------
+
+Normative wake/source owner. EntityId and OceanInteractorId are distinct typed
+generations. P8 supplies post-physics values; P9 builds N+1; tagged reaction is
+eligible only for next P6. ForceProvenance is the exactly-once cycle break.
+Optional GPU wake generations never own physics and retire centrally through
+GpuCompletionSet. See ..\FRAME_THREADING_MODEL.txt,
+..\CANONICAL_CONVENTIONS.txt, and ..\sailing\INDEX.txt.

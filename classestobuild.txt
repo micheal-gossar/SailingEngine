@@ -1,0 +1,703 @@
+SELF-BUILDING VULKAN INITIALIZATION SYSTEM
+==========================================
+
+GOAL
+====
+
+The caller should not manually describe the Vulkan initialization pipeline.
+
+The caller should not provide:
+
+    Step names.
+    Function objects.
+    Dependency lists.
+    Execution order.
+    Registration calls.
+    Success flags.
+    Validation callbacks.
+
+All of that information belongs inside the implementation of the initialization
+system.
+
+The caller should only need to write something similar to:
+
+    VulkanRuntime vulkan(window);
+
+or:
+
+    VulkanRuntime vulkan;
+    vulkan.Initialize(window);
+
+VulkanRuntime should then build everything it needs in the correct order.
+
+
+PUBLIC BEHAVIOR
+===============
+
+The public class should be small:
+
+    class VulkanRuntime {
+    public:
+        explicit VulkanRuntime(Window& window);
+
+        VulkanRuntime(const VulkanRuntime&) = delete;
+        VulkanRuntime& operator=(const VulkanRuntime&) = delete;
+
+        const vk::raii::Instance& Instance() const;
+        const vk::raii::SurfaceKHR& Surface() const;
+        const vk::raii::PhysicalDevice& PhysicalDevice() const;
+        const vk::raii::Device& Device() const;
+
+    private:
+        class Impl;
+        std::unique_ptr<Impl> impl_;
+    };
+
+The constructor performs initialization. If any required operation fails, the
+constructor throws a detailed VulkanInitializationError.
+
+Using a private Impl class hides all initialization steps and dependency
+tracking from users of VulkanRuntime.
+
+
+WHAT BUILDS ITSELF
+==================
+
+VulkanRuntime::Impl should internally create and execute these operations:
+
+    InitializeGlfw
+    ConfirmWindowExists
+    GetRequiredInstanceExtensions
+    CheckValidationLayerSupport
+    CreateVulkanInstance
+    CreateDebugMessenger
+    CreateWindowSurface
+    SelectPhysicalDevice
+    FindQueueFamilies
+    CreateLogicalDevice
+    CreateCommandPools
+    CreateSwapchain
+
+The caller never registers these operations.
+
+The caller never calls these operations individually.
+
+The implementation owns the operation definitions and decides which operations
+are required by each build configuration.
+
+
+INTERNAL OPERATION TYPE
+=======================
+
+InitializationOperation is an internal implementation detail. It is not
+configured by game code.
+
+Conceptual internal type:
+
+    class InitializationOperation {
+    public:
+        enum class State {
+            Pending,
+            Running,
+            Succeeded,
+            Failed
+        };
+
+        State GetState() const noexcept;
+
+    protected:
+        void Begin();
+        void Succeed();
+        void Fail(std::exception_ptr error);
+
+    private:
+        State state_ = State::Pending;
+        std::exception_ptr error_;
+    };
+
+Concrete internal operations derive from it:
+
+    class GetRequiredInstanceExtensionsOperation;
+    class CreateInstanceOperation;
+    class CreateSurfaceOperation;
+
+Each concrete operation contains its own behavior and prerequisite knowledge.
+Nothing is passed in from the caller.
+
+
+DEPENDENCIES ARE DEFINED BY IMPLEMENTATION
+==========================================
+
+Each operation specifies its prerequisites in its implementation.
+
+Conceptual example:
+
+    void GetRequiredInstanceExtensionsOperation::Execute(
+        InitializationState& state,
+        OperationRunner& runner) {
+
+        runner.Require<InitializeGlfwOperation>();
+
+        uint32_t count = 0;
+        const char** names =
+            glfwGetRequiredInstanceExtensions(&count);
+
+        if (names == nullptr || count == 0) {
+            throw VulkanInitializationError(
+                "GLFW returned no Vulkan instance extensions");
+        }
+
+        state.requiredInstanceExtensions.assign(
+            names,
+            names + count);
+    }
+
+The call to:
+
+    runner.Require<InitializeGlfwOperation>();
+
+is written once inside the implementation. A user of VulkanRuntime does not
+write it.
+
+If InitializeGlfwOperation has already succeeded, Require returns immediately.
+
+If it is pending, Require executes it.
+
+If it is running, Require reports a dependency cycle.
+
+If it failed, Require rethrows an error that includes both operation names.
+
+
+AUTOMATIC DEPENDENCY EXECUTION
+==============================
+
+OperationRunner automatically executes prerequisites.
+
+Conceptual internal interface:
+
+    class OperationRunner {
+    public:
+        template<typename Operation>
+        void Require();
+
+        template<typename Operation>
+        void Run();
+
+    private:
+        InitializationState& state_;
+        OperationStorage operations_;
+    };
+
+The implementation starts one final root operation:
+
+    runner.Run<CreateSwapchainOperation>();
+
+CreateSwapchainOperation requires CreateLogicalDeviceOperation and
+CreateSurfaceOperation.
+
+Those operations require their own prerequisites.
+
+The runner recursively builds the complete required dependency chain.
+
+The application does not need to know the correct order.
+
+
+EXAMPLE AUTOMATIC GRAPH
+=======================
+
+The implementation contains relationships similar to:
+
+    GetRequiredInstanceExtensionsOperation
+        requires InitializeGlfwOperation
+
+    CreateWindowOperation
+        requires InitializeGlfwOperation
+
+    CreateInstanceOperation
+        requires GetRequiredInstanceExtensionsOperation
+        requires CheckValidationLayersOperation
+
+    CreateDebugMessengerOperation
+        requires CreateInstanceOperation
+
+    CreateSurfaceOperation
+        requires CreateWindowOperation
+        requires CreateInstanceOperation
+
+    SelectPhysicalDeviceOperation
+        requires CreateSurfaceOperation
+
+    CreateLogicalDeviceOperation
+        requires SelectPhysicalDeviceOperation
+
+    CreateSwapchainOperation
+        requires CreateLogicalDeviceOperation
+        requires CreateSurfaceOperation
+
+Calling only:
+
+    runner.Run<CreateSwapchainOperation>();
+
+causes all required operations to execute once in the correct order.
+
+
+YOUR GLFW EXTENSION EXAMPLE
+===========================
+
+If GetRequiredInstanceExtensionsOperation runs, it internally requires
+InitializeGlfwOperation.
+
+Therefore it is impossible for the operation to call:
+
+    glfwGetRequiredInstanceExtensions(...)
+
+before GLFW initialization succeeds.
+
+The caller does not need to remember this dependency.
+
+The dependency is part of the implementation of
+GetRequiredInstanceExtensionsOperation.
+
+Technical note:
+
+    glfwGetRequiredInstanceExtensions requires glfwInit to have succeeded.
+    It does not require glfwCreateWindow to have succeeded.
+
+If InitWindow currently combines both actions, the operation may require
+InitWindow temporarily. The cleaner design separates:
+
+    InitializeGlfwOperation
+    CreateWindowOperation
+
+
+INTERNAL INITIALIZATION STATE
+=============================
+
+InitializationState stores all temporary and completed resources produced by
+the operations:
+
+    struct InitializationState {
+        Window* window = nullptr;
+
+        std::vector<const char*> requiredInstanceExtensions;
+        std::vector<const char*> enabledValidationLayers;
+
+        vk::raii::Context context;
+        vk::raii::Instance instance = nullptr;
+        vk::raii::DebugUtilsMessengerEXT debugMessenger = nullptr;
+        vk::raii::SurfaceKHR surface = nullptr;
+        vk::raii::PhysicalDevice physicalDevice = nullptr;
+        vk::raii::Device device = nullptr;
+
+        QueueFamilyIndices queueFamilies;
+        SwapchainSupport swapchainSupport;
+    };
+
+InitializationState is private to VulkanRuntime::Impl.
+
+The caller does not fill it.
+
+Each operation writes only the values it creates.
+
+Examples:
+
+    GetRequiredInstanceExtensionsOperation
+        writes requiredInstanceExtensions.
+
+    CreateInstanceOperation
+        writes instance.
+
+    SelectPhysicalDeviceOperation
+        writes physicalDevice and queueFamilies.
+
+
+OPERATION STATE TRACKING
+========================
+
+Every operation has one state:
+
+    Pending
+    Running
+    Succeeded
+    Failed
+
+The runner controls all state changes:
+
+    Pending -> Running -> Succeeded
+    Pending -> Running -> Failed
+
+An operation becomes Succeeded only after its complete implementation returns
+without throwing.
+
+If an operation throws:
+
+1. The runner stores the exception.
+2. The runner marks the operation Failed.
+3. The runner adds the operation name and dependency chain.
+4. The runner rethrows VulkanInitializationError.
+
+An operation that already succeeded is never executed twice during the same
+initialization.
+
+
+AUTOMATIC OPERATION NAMES
+=========================
+
+The caller should not provide operation names.
+
+Each concrete operation owns a compile-time name:
+
+    class CreateInstanceOperation
+        : public InitializationOperation {
+    public:
+        static constexpr std::string_view Name =
+            "CreateVulkanInstance";
+
+        void Execute(
+            InitializationState& state,
+            OperationRunner& runner);
+    };
+
+Only the implementation defines this name.
+
+It is used for:
+
+    Logs.
+    Exceptions.
+    Timings.
+    Validation-message association.
+    Debug UI.
+
+
+ERROR TYPE
+==========
+
+Use a custom exception:
+
+    class VulkanInitializationError
+        : public std::runtime_error {
+    public:
+        VulkanInitializationError(
+            std::string operation,
+            std::string message,
+            std::vector<std::string> dependencyChain);
+
+        std::string_view Operation() const noexcept;
+        const std::vector<std::string>&
+            DependencyChain() const noexcept;
+    };
+
+Example output:
+
+    Vulkan initialization failed.
+    Operation: GetRequiredInstanceExtensions
+    Dependency chain:
+        CreateSwapchain
+        CreateLogicalDevice
+        SelectPhysicalDevice
+        CreateSurface
+        CreateInstance
+        GetRequiredInstanceExtensions
+        InitializeGlfw
+    Cause: glfwInit failed.
+
+Preserve the original exception using std::throw_with_nested or
+std::exception_ptr.
+
+Do not catch an error and replace it with a generic "Vulkan failed" message.
+
+
+VALIDATION LAYER INTEGRATION
+============================
+
+Vulkan validation layers do not enforce the engine operation graph. They report
+invalid Vulkan API usage.
+
+CreateDebugMessengerOperation installs the debug callback automatically when
+validation is enabled.
+
+The callback records messages in a private DebugMessageLog:
+
+    struct DebugMessage {
+        vk::DebugUtilsMessageSeverityFlagBitsEXT severity;
+        vk::DebugUtilsMessageTypeFlagsEXT type;
+        int32_t messageId;
+        std::string messageIdName;
+        std::string message;
+        std::vector<DebugObjectReference> objects;
+    };
+
+The callback must not throw.
+
+Throwing through a Vulkan C callback is unsafe.
+
+Instead:
+
+1. Store the validation message.
+2. Return VK_FALSE.
+3. Let OperationRunner inspect new messages after the Vulkan call returns.
+4. If a new error-severity message appeared, mark the active operation Failed.
+5. Include those messages in VulkanInitializationError.
+
+
+AUTOMATIC VALIDATION MESSAGE ASSOCIATION
+========================================
+
+OperationRunner knows which operation is currently running.
+
+Before an operation starts:
+
+    Record the current DebugMessageLog sequence number.
+
+After the operation ends:
+
+    Read messages added after that sequence number.
+
+The caller does not manually associate messages with operations.
+
+The runner can report:
+
+    Operation: CreateSwapchain
+    Vulkan validation messages produced: 2
+
+This associates messages with the operation that was active when they were
+generated.
+
+Nested operations should use an internal operation stack:
+
+    CreateSwapchain
+        CreateLogicalDevice
+            SelectPhysicalDevice
+
+The top item is the currently executing operation. The complete stack becomes
+the dependency chain in an error.
+
+
+CONFIGURATION IS INTERNAL
+=========================
+
+VulkanRuntime decides its configuration from compile-time settings and
+capability queries.
+
+Debug build:
+
+    Enable VK_LAYER_KHRONOS_validation if required by the project.
+    Enable VK_EXT_debug_utils.
+    Create the debug messenger.
+    Record operation timings.
+    Treat validation errors as initialization failures.
+
+Release build:
+
+    Do not request validation layers by default.
+    Skip debug messenger creation unless explicitly enabled at build time.
+    Keep normal exception handling.
+
+Game code does not pass booleans such as:
+
+    useValidation
+    enableDebug
+    checkExtensions
+
+Those choices belong in the implementation or build configuration.
+
+
+RESOURCE OWNERSHIP
+==================
+
+The operation graph determines creation order.
+
+RAII determines destruction order.
+
+The runner must not become a replacement for RAII.
+
+Declare resource owners in dependency order so C++ destroys them in reverse:
+
+    vk::raii::Context context;
+    vk::raii::Instance instance = nullptr;
+    vk::raii::DebugUtilsMessengerEXT debugMessenger = nullptr;
+    vk::raii::SurfaceKHR surface = nullptr;
+    vk::raii::Device device = nullptr;
+
+Resources created later are destroyed earlier.
+
+If a middle operation throws, already-created RAII resources clean themselves
+up automatically.
+
+
+WINDOW OWNERSHIP
+================
+
+There are two valid designs.
+
+Design A:
+
+    App owns Window.
+    VulkanRuntime receives Window&.
+    The operation graph verifies that Window contains a valid GLFWwindow.
+
+Design B:
+
+    VulkanRuntime owns platform initialization and window creation.
+    Its internal operations call glfwInit and glfwCreateWindow.
+
+The current project already has a Window class, so Design A is recommended.
+
+Window should expose:
+
+    bool IsValid() const noexcept;
+    GLFWwindow* NativeHandle() const noexcept;
+
+GetRequiredInstanceExtensionsOperation still depends on successful GLFW
+initialization. The Window constructor can establish that invariant.
+
+VulkanRuntime should reject an invalid Window immediately.
+
+
+IMPLEMENTATION STRUCTURE
+========================
+
+Recommended files:
+
+    header/Renderer/vulkan_runtime.h
+
+    src/Renderer/vulkan_runtime.cpp
+    src/Renderer/vulkan_initialization_operations.cpp
+
+Private implementation types can remain entirely in .cpp files:
+
+    InitializationState
+    InitializationOperation
+    OperationRunner
+    InitializeGlfwOperation
+    GetRequiredInstanceExtensionsOperation
+    CreateInstanceOperation
+    CreateDebugMessengerOperation
+    CreateSurfaceOperation
+    SelectPhysicalDeviceOperation
+    CreateLogicalDeviceOperation
+    CreateSwapchainOperation
+    DebugMessageLog
+
+This keeps the public header small and prevents the game from depending on
+bootstrap internals.
+
+
+CONCEPTUAL IMPLEMENTATION FLOW
+==============================
+
+    class VulkanRuntime::Impl {
+    public:
+        explicit Impl(Window& window)
+            : state_{ .window = &window },
+              runner_(state_) {
+            runner_.Run<CreateSwapchainOperation>();
+        }
+
+    private:
+        InitializationState state_;
+        OperationRunner runner_;
+    };
+
+    VulkanRuntime::VulkanRuntime(Window& window)
+        : impl_(std::make_unique<Impl>(window)) {
+    }
+
+The caller constructs one object.
+
+The implementation builds the entire dependency chain.
+
+
+REPEATED AND RUNTIME OPERATIONS
+===============================
+
+Startup operations run once:
+
+    GetRequiredInstanceExtensions
+    CreateInstance
+    SelectPhysicalDevice
+    CreateLogicalDevice
+
+Runtime rebuild operations are separate:
+
+    RecreateSwapchain
+    RebuildPipelines
+    ReloadShaders
+
+Do not make every startup operation freely repeatable.
+
+RecreateSwapchain should be another self-contained internal operation that
+checks existing runtime resources automatically.
+
+
+TESTS
+=====
+
+Test the internal runner without requiring Vulkan:
+
+1. A root operation automatically executes all prerequisites.
+2. Every operation executes exactly once.
+3. The caller does not register operations.
+4. A failed prerequisite prevents dependent operation execution.
+5. A direct cycle is detected.
+6. An indirect cycle is detected.
+7. The dependency chain is included in exceptions.
+8. The original nested exception is preserved.
+9. Validation messages are associated with the active operation.
+10. Error-severity validation messages fail debug operations.
+11. Warnings are logged without automatically failing by default.
+12. Completed RAII resources are destroyed after partial failure.
+
+Integration tests:
+
+1. Construct VulkanRuntime with a valid Window.
+2. Reject an invalid Window.
+3. Fail clearly when a required extension is unavailable.
+4. Fail clearly when a required validation layer is unavailable.
+5. Create instance, debug messenger, surface, device, and swapchain.
+6. Destroy VulkanRuntime without leaked Vulkan objects.
+
+
+IMPLEMENTATION ORDER
+====================
+
+1. Add VulkanInitializationError.
+2. Add the private operation State enum.
+3. Implement OperationRunner::Run and Require.
+4. Add automatic operation-stack tracking.
+5. Add cycle detection.
+6. Add fake operations and runner unit tests.
+7. Add private InitializationState.
+8. Implement GetRequiredInstanceExtensionsOperation.
+9. Implement CheckValidationLayersOperation.
+10. Implement CreateInstanceOperation.
+11. Implement DebugMessageLog.
+12. Implement CreateDebugMessengerOperation.
+13. Associate validation messages with active operations.
+14. Implement CreateSurfaceOperation.
+15. Implement SelectPhysicalDeviceOperation.
+16. Implement CreateLogicalDeviceOperation.
+17. Implement CreateSwapchainOperation.
+18. Hide all operations inside VulkanRuntime::Impl.
+19. Expose only constructed Vulkan resources through const accessors.
+20. Add partial-failure and destruction tests.
+
+
+FINAL DESIGN RULES
+==================
+
+1. The caller creates VulkanRuntime and specifies nothing else.
+2. The caller does not register operations.
+3. The caller does not provide dependency lists.
+4. The caller does not provide operation names.
+5. Each operation defines its own prerequisites in its implementation.
+6. The runner executes missing prerequisites automatically.
+7. Every operation executes at most once per initialization.
+8. Dependency cycles throw detailed exceptions.
+9. Validation callbacks record errors but never throw.
+10. The runner associates validation messages with operations automatically.
+11. Vulkan-Hpp and RAII own resources and cleanup.
+12. Internal implementation types stay out of public headers.
+13. Startup fails immediately and clearly when a required operation fails.
+14. No global initialization booleans are exposed to game code.
+15. Runtime rebuild operations remain separate from one-time startup.

@@ -1,0 +1,33 @@
+WORLD SUBSYSTEM INDEX
+=====================
+
+Authorities
+-----------
+
+WorldStreamingManager owns the global observer set, desired cell plan, budgets,
+and activation transaction. Participants own their resources. TerrainSystem
+owns terrain chunk generations and exposes immutable height/collision/bathymetry
+views. WeatherSystem owns deterministic weather snapshots. TimeOfDaySystem owns
+calendar/solar time and scheduled event values.
+
+Documents
+---------
+
+09_weather_system.txt, 10_world_streaming_manager.txt,
+26_terrain_system.txt, and 53_time_of_day.txt.
+
+Dependency and data flow
+------------------------
+
+At P4 TimeOfDay and Weather publish snapshots. Ocean, rendering, audio, and AI
+consume them; Weather does not call those consumers. At P3 streaming commits
+prepared participant operations. Terrain, NavigationGraph, OceanStreamingService,
+audio zones, and gameplay cell content register participant interfaces and
+return readiness/cost/rollback values. They do not maintain independent global
+observer/budget policy.
+
+SaveSystem snapshots participant-owned deltas and does not control residency.
+Unknown terrain/bathymetry is explicit Unavailable, never zero height or
+navigable water. See ..\FRAME_THREADING_MODEL.txt and
+..\OWNERSHIP_LIFETIME_SHUTDOWN.txt.
+

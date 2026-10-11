@@ -1,0 +1,83 @@
+ANIMATION SYSTEM CLASS DESIGN
+=============================
+
+Class:
+
+    AnimationSystem
+
+Purpose:
+
+    Evaluate skeletal clips, blend graphs, events, root motion, and skinning palettes for renderable/gameplay entities.
+
+Public API:
+
+    CreateInstance(skeleton,graph)->AnimationId;
+    SetParameter(id,name,value);
+    Play(id,clip,options);
+    StepFixed(TickId,FixedDeltaSeconds);
+    EvaluateRender(RenderInterpolationAlpha);
+    Palette(id);
+    DrainEvents();
+
+Internal state and components:
+
+    - skeleton hierarchy.
+    - clip curves.
+    - graph state.
+    - previous/current local poses.
+    - event cursors.
+    - root-motion delta.
+    - GPU palette allocations.
+
+Lifecycle and ownership:
+
+    assets shared immutable; instances owned by system; palette snapshot valid through frame; stale IDs rejected
+
+Error behavior:
+
+    Invalid/stale instance, incompatible skeleton/clip/graph, missing asset,
+    capacity, and evaluation failure return AnimationError. Missing visual
+    palette may omit rendering; authoritative events/root motion never use a
+    guessed clip.
+
+Threading and timing constraints:
+
+    authoritative events/root motion at fixed step; visual interpolation at render rate; instances parallelized in deterministic chunks
+
+Dependencies:
+
+    - AssetManager.
+    - EntityRegistry.
+    - JobSystem.
+    - MeshSystem.
+    - TickId/FixedDelta/RenderInterpolationAlpha values.
+
+Tests:
+
+    - clip sampling.
+    - loop event once.
+    - crossfade.
+    - missing bone/channel.
+    - root motion.
+    - stale ID.
+    - palette interpolation.
+
+Implementation rules:
+
+    - Keep implementation-only types out of public headers.
+    - Use RAII and generational IDs; do not expose owning raw pointers.
+    - Validate descriptions before allocating or mutating state.
+    - Publish complete snapshots/generations rather than partially updated data.
+    - Add diagnostics for failure context without making logging a dependency
+      of correctness.
+
+Canonical integration contract:
+
+    Normative AnimationId runtime owner. StepFixed at P8 advances authoritative
+    graph state, ordered events, and root-motion delta; the owning movement/
+    gameplay system validates and applies root motion, never Renderer. P14
+    interpolates copied previous/current poses and publishes a palette retained
+    through GpuCompletionSet. Assets are immutable AssetId generations and jobs
+    process stable instance chunks.
+
+    See ..\CANONICAL_CONVENTIONS.txt, ..\FRAME_THREADING_MODEL.txt, and INDEX.txt.

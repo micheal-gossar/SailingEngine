@@ -1,0 +1,77 @@
+BEHAVIOR TREE CLASS DESIGN
+==========================
+
+Class:
+
+    BehaviorTreeRuntime
+
+Purpose:
+
+    Execute data-defined AI behavior trees with explicit status, memory, services, and debugging traces.
+
+Public API:
+
+    Create(definition,blackboardSchema)->TreeInstance;
+    Tick(instance,context)->Status;
+    Abort(instance);
+    SetBlackboard(...);
+    Trace(instance);
+    RegisterNodeType(type,factory);
+
+Internal state and components:
+
+    - immutable compiled nodes.
+    - per-instance node memory/status.
+    - typed blackboard.
+    - service timers.
+    - trace ring.
+    - node registry.
+
+Lifecycle and ownership:
+
+    definitions shared assets; instance owns memory; context references valid only during Tick; abort releases active task resources
+
+Error behavior:
+
+    Invalid definition/schema/node/instance, blackboard type mismatch, capacity,
+    and async task failure return BehaviorError or node Failure status according
+    to the compiled policy. Implementation exceptions are contained at Tick.
+
+Threading and timing constraints:
+
+    simulation fixed-step; one instance not ticked concurrently; async tasks return Running and poll handles, never block
+
+Dependencies:
+
+    - AssetManager.
+    - JobSystem.
+    - DebugDiagnostics.
+
+Tests:
+
+    - sequence/selector.
+    - abort propagation.
+    - decorator.
+    - blackboard type error.
+    - async completion/cancel.
+    - deterministic trace.
+
+Implementation rules:
+
+    - Keep implementation-only types out of public headers.
+    - Use RAII and generational IDs; do not expose owning raw pointers.
+    - Validate descriptions before allocating or mutating state.
+    - Publish complete snapshots/generations rather than partially updated data.
+    - Add diagnostics for failure context without making logging a dependency
+      of correctness.
+
+Canonical integration contract:
+
+    Normative TreeInstance runtime owner. Definitions are immutable AssetId
+    generations validated/compiled before publication. P5 ticks once per
+    configured TickId divisor from an immutable context; node factories cannot
+    retain context references. Async nodes hold typed cancellable handles and
+    poll without blocking. Stable node order and explicit DeterministicStreamKey
+    make authoritative choices independent of worker/render order.
+
+    See ..\CANONICAL_CONVENTIONS.txt, ..\ERROR_RESULT_POLICY.txt, and INDEX.txt.

@@ -1,0 +1,83 @@
+MESH SYSTEM CLASS DESIGN
+========================
+
+Class:
+
+    MeshSystem
+
+Purpose:
+
+    Own validated CPU/GPU mesh assets, upload them, expose draw ranges, and support LOD and skinning metadata.
+
+Public API:
+
+    Create(MeshData)->MeshHandle;
+    Load(assetId);
+    RequestResident(handle);
+    SelectLod(handle,projectedSize);
+    Binding(handle) const;
+    ReleaseResident(handle);
+    CreateDynamic(desc);
+
+Internal state and components:
+
+    - vertex/index buffers.
+    - layouts.
+    - submeshes.
+    - bounds.
+    - LODs.
+    - skin/skeleton links.
+    - upload state/ticket.
+    - residency budget.
+
+Lifecycle and ownership:
+
+    handles retain metadata; GPU buffers owned by system and deferred on eviction; dynamic maps use frame-scoped views
+
+Error behavior:
+
+    Invalid topology/layout/bounds/LOD, stale handle, missing asset, upload/
+    budget, and GPU failures return MeshError. Binding is available only for a
+    Ready retained generation.
+
+Threading and timing constraints:
+
+    imports/jobs prepare CPU data; GPU upload via command scheduler; render only uses Ready generation; no blocking render thread
+
+Dependencies:
+
+    - GpuResourceManager.
+    - CommandScheduler.
+    - AssetManager.
+    - Material AssetId and skeleton/skin format schemas; draw assembly resolves
+      independent Material/Animation snapshots.
+
+Tests:
+
+    - index/bounds validation.
+    - upload state.
+    - LOD thresholds.
+    - eviction with in-flight draw.
+    - dynamic overflow.
+    - unsupported layout.
+
+Implementation rules:
+
+    - Keep implementation-only types out of public headers.
+    - Use RAII and generational IDs; do not expose owning raw pointers.
+    - Validate descriptions before allocating or mutating state.
+    - Publish complete snapshots/generations rather than partially updated data.
+    - Add diagnostics for failure context without making logging a dependency
+      of correctness.
+
+Canonical integration contract:
+
+    Normative MeshHandle owner. A mesh stores geometry/submesh bounds and
+    Material AssetIds but does not own MaterialSystem or AnimationSystem.
+    Renderer draw-packet assembly resolves compatible immutable handles. CPU
+    creation/import uses SI local asset coordinates; GPU upload returns a
+    GpuTimelinePoint and first use is a RenderGraph edge. Eviction transfers
+    payloads with last-use GpuCompletionSet to central retirement.
+
+    See ..\assets\55_model_importer.txt, ..\vulkan\02_gpu_resource_manager.txt,
+    and INDEX.txt.

@@ -1,0 +1,89 @@
+OCEAN SIMULATION LEGACY FACADE DESIGN
+=====================================
+
+Class:
+
+    OceanSimulation
+
+Purpose:
+
+    Preserve a narrow compatibility name for early callers while delegating all
+    ownership and behavior to OceanDomain, OceanQueryService, and immutable
+    OceanRenderSnapshot. This facade owns no wave, coastal, wake, GPU, or
+    persistence state and must not be instantiated as a second ocean.
+
+Public API:
+
+    explicit OceanSimulation(OceanDomain&, OceanQueryService&);
+    Result<OceanSample,OceanError> Sample(
+        const OceanSimulationView&, const WorldPosition&) const;
+    Result<void,OceanError> SampleBatch(
+        const OceanSimulationView&,
+        std::span<const WorldPosition>,
+        std::span<OceanSample>) const;
+    OceanRenderSnapshot AcquireRenderSnapshot(RenderFrameId) const;
+
+OceanSample:
+
+    Height.
+    World-space position/displacement.
+    Normal.
+    Tangent.
+    Water velocity.
+    Crest/foam factor.
+
+Ownership:
+
+    OceanDomain owns epoch/update/publication. DeepWaterSpectralOcean,
+    CoastalOceanSolver, OceanInteractionSystem, and forcing own physical state.
+    OceanQueryService owns composition. Their typed immutable views keep data
+    alive; this facade holds non-owning service references bounded by host life.
+
+Behavior:
+
+    Forward sampling to OceanQueryService with explicit policy/generation.
+    Forward render snapshot acquisition to OceanDomain.
+    Preserve early batch/result shape only where it can represent validity,
+    provenance, confidence, units, and region without loss.
+    Reject legacy calls that omit TickId/policy/generation instead of guessing.
+
+Rules:
+
+    CPU and GPU formulas use the same coordinate convention.
+    Sampling is read-only and allocation-free.
+    Batch results match individual samples.
+    Rendering interpolation never changes authoritative physics time.
+    No consumer may obtain renderer displacement textures through this facade.
+
+Errors:
+
+    InvalidWaveCount
+    InvalidWavelength
+    InvalidAmplitude
+    InvalidSteepness
+    OutputSpanTooSmall
+
+Tests:
+
+    Deterministic output from seed.
+    Flat ocean with zero amplitudes.
+    Analytic normal versus finite difference.
+    Periodicity at known points.
+    CPU/GPU reference sample comparison.
+    Stable large-coordinate sampling.
+    Weather transition continuity.
+
+Dependencies:
+
+    OceanDomain
+    OceanQueryService
+
+Canonical integration contract:
+
+    Conceptual deprecated facade; new code uses files 72 and 76 directly.
+    Entity/vessel physics uses AuthoritativePhysics policy against generation N;
+    render/audio/effects use their documented snapshots. Types, SI/world axes,
+    fixed time, errors, seeds, and GPU rules come from
+    ..\CANONICAL_CONVENTIONS.txt and 87_ocean_conventions_invariants.txt.
+    See 71_ocean_architecture_index.txt and
+    ..\FRAME_THREADING_MODEL.txt.

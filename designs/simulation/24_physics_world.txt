@@ -1,0 +1,85 @@
+PHYSICS WORLD CLASS DESIGN
+==========================
+
+Class:
+
+    PhysicsWorld
+
+Purpose:
+
+    Advance deterministic-enough rigid-body simulation and coordinate forces, constraints, queries, and collision events.
+
+Public API:
+
+    CreateBody(desc)->Result<BodyId,PhysicsError>;
+    DestroyBody(id)->Result<void,PhysicsError>;
+    AddForce(id,ForceN,WorldPosition point,ForceProvenance);
+    SetKinematicTarget(...);
+    Step(TickId,FixedDeltaSeconds)->Result<PhysicsSnapshot,PhysicsError>;
+    RayCast(query);
+    Overlap(query);
+    DrainEvents();
+
+Internal state and components:
+
+    - body registry.
+    - transforms/velocities/inertia.
+    - broadphase.
+    - contact manifolds.
+    - constraints.
+    - force accumulators.
+    - event buffers.
+    - origin offset.
+
+Lifecycle and ownership:
+
+    World owns BodyId/backend bodies and retains immutable ShapeHandle values
+    owned by CollisionSystem. Destruction is deferred until the P7 boundary.
+
+Error behavior:
+
+    Invalid/stale body or shape, non-finite units, illegal phase, capacity, and
+    backend failures return PhysicsError. Backend callbacks are `noexcept` and
+    append bounded value events; they never mutate world or throw.
+
+Threading and timing constraints:
+
+    Step only on simulation thread at fixed delta; commands from other threads queue for next boundary; callbacks never mutate world
+
+Dependencies:
+
+    - CollisionSystem.
+    - TickId/FixedDelta values from SimulationClock.
+    - JobSystem.
+    - DebugDiagnostics.
+
+Tests:
+
+    - gravity integration.
+    - force/torque.
+    - sleeping.
+    - collision event order.
+    - query filters.
+    - destroy during contact.
+    - large-coordinate rebasing.
+
+Implementation rules:
+
+    - Keep implementation-only types out of public headers.
+    - Use RAII and generational IDs; do not expose owning raw pointers.
+    - Validate descriptions before allocating or mutating state.
+    - Publish complete snapshots/generations rather than partially updated data.
+    - Add diagnostics for failure context without making logging a dependency
+      of correctness.
+
+Canonical integration contract:
+
+    Normative rigid-body owner. P7 is the sole Step writer; inputs queue from
+    other threads/phases and results publish as immutable PhysicsSnapshot plus
+    stably ordered events. Positions/velocities/forces use root SI/world
+    conventions. Deterministic support is explicitly "supported build/profile"
+    with stable broadphase/contact/event ordering and reductions; render delta
+    never enters. Each external force has provenance and one application owner.
+
+    See ..\CANONICAL_CONVENTIONS.txt, ..\FRAME_THREADING_MODEL.txt,
+    39_collision_system.txt, and ..\sailing\INDEX.txt.

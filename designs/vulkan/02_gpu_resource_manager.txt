@@ -1,0 +1,116 @@
+GPU RESOURCE MANAGER CLASS DESIGN
+=================================
+
+Class:
+
+    GpuResourceManager
+
+Purpose:
+
+    Create, cache, upload, transition, and destroy GPU-facing buffers, images,
+    image views, and samplers. It sits above MemoryManager and hides staging
+    transfers from rendering/game systems.
+
+Public API:
+
+    Result<BufferHandle, GpuResourceError> CreateBuffer(
+        const BufferDescription& description);
+    Result<ImageHandle, GpuResourceError> CreateImage(
+        const ImageDescription& description);
+    Result<SamplerHandle, GpuResourceError> GetSampler(
+        const SamplerDescription& description);
+    Result<UploadTicket, GpuResourceError> Upload(
+        BufferHandle destination, std::span<const std::byte> data);
+    Result<UploadTicket, GpuResourceError> Upload(
+        ImageHandle destination, const ImageUpload& upload);
+    Result<void, GpuResourceError> Release(
+        BufferHandle, const GpuCompletionSet& lastUse);
+    Result<void, GpuResourceError> Release(
+        ImageHandle, const GpuCompletionSet& lastUse);
+    void ProcessCompletedUploads(const CompletedGpuTimelines&);
+
+Handle design:
+
+    Handles contain an index and generation.
+    Stale handles fail validation.
+    Callers never retain pointers to internal resource records.
+
+Resource records:
+
+    Vulkan handle.
+    Allocation.
+    Description.
+    Last compiled synchronization2 state (queue/stage/access/layout) for import
+    validation; RenderGraph remains the transition authority.
+    Last-use GpuCompletionSet, qualified by queue.
+    Debug name.
+    Generation and state.
+
+Upload behavior:
+
+    Allocate from a persistently mapped staging ring.
+    Copy source bytes into aligned staging space.
+    Record transfer commands.
+    Add required transfer-to-use barriers.
+    Declare/submit transfer work and return an UploadTicket containing a
+    GpuTimelinePoint. The first consuming RenderGraph pass declares the
+    transfer-to-use edge.
+    Reclaim staging space only after the ticket completes.
+
+Sampler cache:
+
+    Hash complete SamplerDescription.
+    Return an existing sampler for identical descriptions.
+    Destroy cached samplers with the manager.
+
+Errors:
+
+    InvalidHandle
+    InvalidUploadRange
+    UnsupportedFormat
+    StagingBudgetExceeded
+    ResourceStillInUse
+    VulkanOperationFailed
+
+Rules:
+
+    All public methods validate handles.
+    Release invalidates the generation immediately and transfers the move-only
+    Vulkan/allocation payload to FrameManager's GpuRetirementQueue.
+    Image transitions are explicit RenderGraph declarations and tracked only for
+    next-frame import validation.
+    Upload failure never returns a ready-looking resource.
+    Thread-safe asset upload requests may queue work; Vulkan submission remains
+    on the configured render/transfer thread.
+
+Tests:
+
+    Reject stale handles.
+    Upload buffer and verify readback.
+    Upload mipmapped image.
+    Reuse identical sampler.
+    Validate staging-ring wraparound.
+    Release resource while in flight and verify deferred destruction.
+    Verify queue-family ownership transfers.
+
+Dependencies:
+
+    MemoryManager
+    VulkanRuntime
+    CommandScheduler
+    GpuRetirementQueue interface owned by FrameManager
+    DebugDiagnostics observer sink
+
+Canonical integration contract:
+
+    Normative persistent GPU-record owner. Mutation and upload submission occur
+    on the render/resource thread; worker-safe requests copy values into a
+    bounded queue. Handles are typed index/generation values and records never
+    expose owning Vulkan/raw allocation pointers. Byte sizes/offsets are explicit.
+    CommandScheduler allocates timeline values; RenderGraph owns normal-frame
+    barriers; FrameManager owns deferred callback execution; MemoryManager owns
+    allocation mechanics only. No hidden wait or layout transition is allowed.
+
+    See ..\CANONICAL_CONVENTIONS.txt,
+    ..\OWNERSHIP_LIFETIME_SHUTDOWN.txt, 19_command_scheduler.txt,
+    20_frame_manager.txt, and ..\rendering\03_render_graph.txt.

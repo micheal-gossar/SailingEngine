@@ -1,0 +1,82 @@
+CAMERA SYSTEM CLASS DESIGN
+==========================
+
+Class:
+
+    CameraSystem
+
+Purpose:
+
+    Maintain simulation cameras and produce stable interpolated view/projection data for rendering.
+
+Public API:
+
+    CreateCamera(desc)->CameraId;
+    DestroyCamera(id);
+    SetPose(id,pose);
+    SetProjection(id,projection);
+    SetActive(id);
+    BuildView(RenderInterpolationAlpha,Viewport)->CameraView;
+    ScreenRay(...);
+    WorldToScreen(...);
+
+Internal state and components:
+
+    - camera slots/generations.
+    - previous/current poses.
+    - perspective/orthographic parameters.
+    - active ID.
+    - jitter sequence.
+    - exposure data.
+
+Lifecycle and ownership:
+
+    registry owns cameras; IDs are generational; renderer receives value snapshots only
+
+Error behavior:
+
+    Invalid/stale CameraId, projection range, non-finite pose, viewport, or
+    origin generation returns CameraError. No identity camera silently replaces
+    a missing active camera.
+
+Threading and timing constraints:
+
+    Pose changes occur at fixed simulation steps; BuildView runs on render
+    thread using RenderInterpolationAlpha; reverse-Z and Vulkan projection
+    convention are fixed.
+
+Dependencies:
+
+    - RenderInterpolationSystem snapshot/alpha values.
+    - WorldCoordinateSystem RenderOrigin.
+    - Viewport value supplied by Renderer.
+
+Tests:
+
+    - projection math.
+    - reverse-Z depth.
+    - pose interpolation.
+    - invalid/stale ID.
+    - resize aspect.
+    - ray round-trip.
+    - jitter reset.
+
+Implementation rules:
+
+    - Keep implementation-only types out of public headers.
+    - Use RAII and generational IDs; do not expose owning raw pointers.
+    - Validate descriptions before allocating or mutating state.
+    - Publish complete snapshots/generations rather than partially updated data.
+    - Add diagnostics for failure context without making logging a dependency
+      of correctness.
+
+Canonical integration contract:
+
+    Normative camera registry/view extractor. Pose changes are authoritative P12
+    copied values in WorldPosition/metres/radians; BuildView runs P14 from
+    previous/current immutable snapshots and RenderInterpolationAlpha. CameraView
+    is a value valid through the frame GpuCompletionSet and carries reverse-Z,
+    jitter, RenderFrameId, and OriginGeneration. Camera has no WindowPlatform or
+    SimulationClock ownership dependency.
+
+    See ..\CANONICAL_CONVENTIONS.txt, 60_render_interpolation.txt, and INDEX.txt.

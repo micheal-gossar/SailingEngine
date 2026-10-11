@@ -1,0 +1,45 @@
+ASSET SUBSYSTEM INDEX
+=====================
+
+Authority and lifecycle
+-----------------------
+
+AssetId is a stable 128-bit logical ID. AssetRegistry is the immutable mapping
+authority. AssetManager owns runtime request slots and state; typed Shader,
+Material, Mesh, Texture, Audio, and data systems own constructed runtime
+generations. Old generations remain retained through CPU readers and GPU
+completion.
+
+Documents
+---------
+
+05_asset_manager.txt:
+    Runtime resolution/load/dependency state machine.
+30_virtual_filesystem.txt:
+    Virtual mounts, bounded reads, and watcher values.
+44_asset_cooker.txt:
+    Offline deterministic processor DAG and atomic artifact publication.
+55_model_importer.txt:
+    Offline source conversion implementing an importer/processor interface.
+67_file_watcher_hot_reload.txt:
+    Development-only debounce/rebuild/replacement coordinator.
+69_asset_registry.txt:
+    Stable ID, artifact, type, hash, and dependency manifest authority.
+
+Dependency direction
+--------------------
+
+Cooker calls registered importer/processors; ModelImporter does not depend on
+AssetCooker. Cooker emits manifests consumed by AssetRegistry. AssetManager
+depends on VFS, Registry, JobSystem, and typed factories. Registry does not
+depend on AssetManager. Hot reload prepares a new registry/artifact generation,
+then separately asks affected runtime owners to construct and publish it at P13.
+No runtime renderer dependency enters offline cooking.
+
+Failure contract
+----------------
+
+Unknown/corrupt/missing/dependency-failed assets remain Failed with an Error.
+Named presentation proxies are explicit policy and never look Ready under the
+requested AssetId. See ..\ERROR_RESULT_POLICY.txt.
+

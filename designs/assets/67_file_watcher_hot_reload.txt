@@ -1,0 +1,83 @@
+FILE WATCHER HOT RELOAD CLASS DESIGN
+====================================
+
+Class:
+
+    FileWatcherHotReload
+
+Purpose:
+
+    Observe development asset/shader/config changes, debounce them, and coordinate dependency-aware safe reloads.
+
+Public API:
+
+    Watch(root,filters);
+    Poll();
+    RegisterReloader(type,fn);
+    RequestReload(path);
+    Suspend();
+    Resume();
+    DrainResults();
+
+Internal state and components:
+
+    - platform watcher backend.
+    - canonical path event queue.
+    - debounce map.
+    - dependency reverse index.
+    - reload generations.
+    - diagnostics.
+
+Lifecycle and ownership:
+
+    watch registrations RAII; reload job owns source snapshot; old runtime generation retained until consumers release it
+
+Error behavior:
+
+    Watch/debounce/cook/registry/factory/publication failures return ReloadError
+    per change set. Failure retains the old registry/runtime generations and
+    records affected AssetIds; it never exposes half a dependency fanout.
+
+Threading and timing constraints:
+
+    watch callback only enqueues; processing main thread; cooking jobs asynchronous; publication at frame/simulation safe point
+
+Dependencies:
+
+    - VirtualFileSystem.
+    - AssetCooker.
+    - AssetRegistry.
+    - AssetManager.
+    - ShaderPipelineManager.
+    - JobSystem.
+
+Tests:
+
+    - event coalescing.
+    - rename/delete.
+    - dependency fanout.
+    - failed reload keeps old generation.
+    - rapid edits.
+    - suspend/resume.
+
+Implementation rules:
+
+    - Keep implementation-only types out of public headers.
+    - Use RAII and generational IDs; do not expose owning raw pointers.
+    - Validate descriptions before allocating or mutating state.
+    - Publish complete snapshots/generations rather than partially updated data.
+    - Add diagnostics for failure context without making logging a dependency
+      of correctness.
+
+Canonical integration contract:
+
+    Development-only coordinator, not an asset/resource owner. Watch callbacks
+    only enqueue VirtualPath events. Cooker produces artifacts/manifest delta;
+    AssetRegistry validates one immutable generation; each typed runtime owner
+    prepares replacements; P13 publishes the complete compatible set. Old CPU
+    generations are reference-retained and old GPU generations retire through
+    GpuCompletionSet. Shader-interface-incompatible changes return ReloadRejected
+    unless an explicit dependent rebuild succeeds.
+
+    See ..\FRAME_THREADING_MODEL.txt, 05_asset_manager.txt,
+    69_asset_registry.txt, and ..\rendering\04_shader_pipeline_manager.txt.

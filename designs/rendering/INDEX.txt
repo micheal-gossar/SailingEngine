@@ -1,0 +1,37 @@
+RENDERING SUBSYSTEM INDEX
+=========================
+
+Scope and ownership
+-------------------
+
+Rendering consumes immutable P12 snapshots and owns presentation-only state.
+Renderer is the facade/composition owner for Vulkan-facing services and pass
+providers. RenderGraph is the sole normal-frame synchronization planner.
+RenderInterpolationSystem copies previous/current simulation values; it cannot
+feed simulation.
+
+Documents
+---------
+
+03_render_graph.txt and 70_renderer.txt define orchestration.
+04_shader_pipeline_manager.txt, 41_material_system.txt, 42_mesh_system.txt, and
+43_texture_system.txt own typed runtime/GPU generations.
+23_camera_system.txt and 60_render_interpolation.txt extract views/world.
+27_sky_atmosphere.txt, 28_particle_system.txt, 45_lighting_shadow.txt,
+46_cloud_system.txt, and 47_storm_effects.txt provide passes.
+56_graphics_quality.txt selects validated presentation budgets.
+
+Dependency direction
+--------------------
+
+DescriptorAllocator is independent of shader policy; ShaderPipelineManager uses
+it. Mesh assets reference material AssetIds but MeshSystem does not own
+MaterialSystem. Draw packet assembly resolves both immutable handles. Lighting
+consumes SkyLightingSnapshot; sky and lighting do not call one another.
+GraphicsQualityManager publishes a reconfiguration plan; render systems transact their
+own replacements and return results.
+
+All GPU uses declare RenderGraph states and retire through GpuCompletionSet.
+No render delta, readback, culling, visibility, particle, cloud, or audio-
+listener interpolation can change authoritative state. See
+..\CANONICAL_CONVENTIONS.txt and ..\vulkan\INDEX.txt.

@@ -1,0 +1,77 @@
+COMBAT SYSTEM CLASS DESIGN
+==========================
+
+Class:
+
+    CombatSystem
+
+Purpose:
+
+    Optionally resolve weapons, projectiles, impacts, cooldowns, and authoritative damage through commands and events.
+
+Public API:
+
+    RegisterLoadout(vessel,definition);
+    Aim(vessel,solution);
+    Fire(FireCommand);
+    Step(TickId,FixedDeltaSeconds);
+    QuerySolution(...);
+    DrainEvents();
+
+Internal state and components:
+
+    - weapon slots/ammo/cooldowns.
+    - projectile registry.
+    - ballistic parameters.
+    - collision masks.
+    - fire sequence IDs.
+
+Lifecycle and ownership:
+
+    projectiles/entities owned by system/registry; loadout removed with vessel; visual effects observe events only
+
+Error behavior:
+
+    Invalid/stale target/loadout, duplicate command, cooldown/ammo, collision
+    generation, capacity, and numerical failure return CombatError/rejection.
+    Fire/ammo/damage transaction is idempotent by command sequence.
+
+Threading and timing constraints:
+
+    fixed simulation step; fire commands validated and sequenced; broadphase/query results consumed in deterministic order
+
+Dependencies:
+
+    - Vessel/Physics immutable snapshots and command/query interfaces.
+    - Damage and inventory event/transaction interfaces.
+    - GameplayCommandBus.
+
+Tests:
+
+    - cooldown/ammo.
+    - ballistic hit/miss.
+    - friendly filter.
+    - duplicate fire command.
+    - owner destruction.
+    - damage event routing.
+
+Implementation rules:
+
+    - Keep implementation-only types out of public headers.
+    - Use RAII and generational IDs; do not expose owning raw pointers.
+    - Validate descriptions before allocating or mutating state.
+    - Publish complete snapshots/generations rather than partially updated data.
+    - Add diagnostics for failure context without making logging a dependency
+      of correctness.
+
+Canonical integration contract:
+
+    Optional normative command/event consumer. P2 validates FireCommand; P7
+    physics integrates projectiles/queries; P8 commits inventory consumption
+    and emits ordered DamageEvent exactly once. It owns typed loadout/projectile
+    runtime state, not vessel/physics/damage/inventory systems. Values use SI
+    and deterministic TickId/sequence/seed. Visual/audio effects observe events
+    and cannot affect hit resolution.
+
+    See ..\FRAME_THREADING_MODEL.txt, ..\sailing\52_damage_stability.txt,
+    35_inventory_economy.txt, and INDEX.txt.
