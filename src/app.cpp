@@ -1,13 +1,21 @@
 #include "app.h"
 
-App::App() {
-    
+#include "Renderer/renderer.h"
+#include "Window/window.h"
+
+#include <memory>
+
+App::App()
+    : window{std::make_unique<Window>()},
+      renderer{std::make_unique<Renderer>()}
+{
+    window->Show();
 }
 
 App::~App() = default;
 
 void App::Update() {
-    while (!glfwWindowShouldClose(window.GetWindow())) {
+    while (!glfwWindowShouldClose(window->GetWindow())) {
         glfwPollEvents();
     }
 }

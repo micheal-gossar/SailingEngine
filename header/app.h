@@ -1,19 +1,21 @@
 #ifndef APP_H
 #define APP_H
 
-#include "common.h"
-#include "Renderer/renderer.h"
-#include "Window/window.h"
+#include <memory>
+
+class Renderer;
+class Window;
 
 class App {
 public:
     App();
     ~App();
 
-    Window window;
-    Renderer renderer;
-
     void Update();
+
+private:
+    std::unique_ptr<Window> window;
+    std::unique_ptr<Renderer> renderer;
 };
 
 #endif

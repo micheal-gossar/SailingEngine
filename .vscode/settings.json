@@ -2,10 +2,11 @@
     "C_Cpp.intelliSenseEngine": "default",
     "C_Cpp.autocomplete": "default",
     "C_Cpp.errorSquiggles": "enabled",
-    "C_Cpp.default.compileCommands": "${workspaceFolder}/build/compile_commands.json",
+    "C_Cpp.default.configurationProvider": "ms-vscode.cmake-tools",
     "cmake.cmakePath": "C:/Program Files/CMake/bin/cmake.exe",
     "cmake.generator": "Ninja",
-    "cmake.configureOnOpen": false,
+    "cmake.buildDirectory": "${workspaceFolder}/build/${buildType}",
+    "cmake.configureOnOpen": true,
     "cmake.configureSettings": {
         "CMAKE_C_COMPILER": "C:/msys64/ucrt64/bin/gcc.exe",
         "CMAKE_CXX_COMPILER": "C:/msys64/ucrt64/bin/g++.exe",

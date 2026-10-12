@@ -1,0 +1,16 @@
+buildType:
+  default: debug
+  description: Build configuration
+  choices:
+    debug:
+      short: Debug
+      long: Debug build with validation and debug logging
+      buildType: Debug
+    release:
+      short: Release
+      long: Optimized release build
+      buildType: Release
+    performance:
+      short: Performance
+      long: Optimized build with symbols and performance instrumentation enabled
+      buildType: Performance

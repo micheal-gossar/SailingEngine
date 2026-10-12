@@ -1,7 +1,7 @@
 #ifndef WINDOW_H
 #define WINDOW_H
 
-#include "common.h"
+#include <GLFW/glfw3.h>
 
 class Window {
 public:
@@ -10,6 +10,8 @@ public:
 
     Window(const Window&) = delete;
     Window& operator=(const Window&) = delete;
+
+    void Show();
 
     [[nodiscard]] GLFWwindow* GetWindow() const {
         return window;

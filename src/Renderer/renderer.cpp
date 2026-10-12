@@ -1,13 +1,21 @@
 #include "Renderer/renderer.h"
 
+#include "Debug/debugManager.h"
+#include "common.h"
+
+#include <GLFW/glfw3.h>
+
 #include <algorithm>
 #include <cstring>
+#include <memory>
+#include <stdexcept>
 #include <string>
-#include <vector>
 
 Renderer::Renderer() {
     InitVulkan();
 }
+
+Renderer::~Renderer() = default;
 
 void Renderer::InitVulkan() {
     createInstance();
@@ -24,6 +32,9 @@ void Renderer::createInstance() {
 
        // Get the required extensions.
     auto requiredExtensions = getRequiredInstanceExtensions();
+       if (enableValidationLayers) {
+           requiredExtensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
+       }
 
     // Check if the required extensions are supported by the Vulkan implementation.
     auto extensionProperties = context.enumerateInstanceExtensionProperties();
@@ -72,17 +83,20 @@ void Renderer::createInstance() {
 
     instance = vk::raii::Instance(context, createInfo);
 
-    if (inDebug) {
-        std::cout << "Created a Vulkan instance\n";
-        std::cout << "Available extensions:\n";
-        for (const auto& extension : extensionProperties) {
-            std::cout << '\t' << extension.extensionName << '\n';
-        }
-        std::cout << std::flush;
+#ifndef NDEBUG
+    debugManager = std::make_unique<DebugManager>(logger, instance);
+#endif
+
+    logger.Log("Created a Vulkan instance", "Debug");
+    logger.Log("Available extensions:", "Debug");
+
+    for (const auto& extension : extensionProperties) {
+        logger.Log(std::string{"\t"} + extension.extensionName.data(), "Debug");
     }
+    logger.Flush();
 }
 
-std::vector<const char*> getRequiredInstanceExtensions()
+std::vector<const char*> Renderer::getRequiredInstanceExtensions()
 {
     uint32_t glfwExtensionCount = 0;
     auto glfwExtensions = glfwGetRequiredInstanceExtensions(&glfwExtensionCount);
