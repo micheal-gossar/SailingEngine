@@ -1,6 +1,8 @@
 #ifndef WINDOW_H
 #define WINDOW_H
 
+#include "common.h"
+
 #include <GLFW/glfw3.h>
 
 class Window {
@@ -19,5 +21,6 @@ public:
 
 private:
     GLFWwindow* window = nullptr;
+
 };
 #endif

@@ -7,7 +7,7 @@
 
 App::App()
     : window{std::make_unique<Window>()},
-      renderer{std::make_unique<Renderer>()}
+      renderer{std::make_unique<Renderer>(window.get())}
 {
     window->Show();
 }

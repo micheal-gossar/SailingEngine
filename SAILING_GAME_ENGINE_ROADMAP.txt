@@ -30,14 +30,14 @@ PART 1 - DEFINE TECHNICAL REQUIREMENTS
 1.1 Establish supported configurations
 --------------------------------------
 [*] Define the minimum Vulkan API version.
-[ ] Define required Vulkan instance extensions.
+[*] Define required Vulkan instance extensions.
 [ ] Define required Vulkan device extensions.
 [ ] Define required physical-device features.
 [ ] Define optional features with fallback paths.
 [ ] Define supported compilers and minimum versions.
-[ ] Define Debug, RelWithDebInfo, and Release configurations.
+[*] Define Debug, RelWithDebInfo, and Release configurations.
 [ ] Define x64 as the initial target architecture.
-[ ] Define the initial render resolution and resizing behavior.
+[*] Define the initial render resolution and resizing behavior.
 [ ] Define the target fixed simulation frequency.
 [ ] Define the target frame-time budget.
 [ ] Define CPU and GPU memory budgets.
@@ -65,25 +65,25 @@ PART 2 - STABILIZE THE PROJECT FOUNDATION
 
 2.1 Establish source ownership and object lifetimes
 ---------------------------------------------------
-[ ] Make App the top-level owner of long-lived game systems.
-[ ] Make Window own exactly one GLFWwindow pointer.
+[*] Make App the top-level owner of long-lived game systems.
+[*] Make Window own exactly one GLFWwindow pointer.
 [ ] Make Renderer receive a Window reference; do not let Renderer own a second
     Window instance.
-[ ] Remove circular header inclusion.
-[ ] Keep common.h limited to stable, genuinely common declarations.
-[ ] Prefer forward declarations over including large headers.
-[ ] Make Vulkan handles private members of Renderer or smaller Vulkan wrapper
+[*] Remove circular header inclusion.
+[*] Keep common.h limited to stable, genuinely common declarations.
+[*] Prefer forward declarations over including large headers.
+[*] Make Vulkan handles private members of Renderer or smaller Vulkan wrapper
     classes.
-[ ] Choose either Vulkan-Hpp RAII handles or explicit vk::* handles and use the
+[*] Choose either Vulkan-Hpp RAII handles or explicit vk::* handles and use the
     choice consistently.
 [ ] If using Vulkan-Hpp RAII:
-    [ ] Create vk::raii::Context first.
-    [ ] Store vk::raii::Instance.
-    [ ] Store vk::raii::DebugUtilsMessengerEXT.
+    [*] Create vk::raii::Context first.
+    [*] Store vk::raii::Instance.
+    [*] Store vk::raii::DebugUtilsMessengerEXT.
     [ ] Store vk::raii::SurfaceKHR.
     [ ] Store vk::raii::PhysicalDevice.
     [ ] Store vk::raii::Device.
-    [ ] Let destructors enforce reverse destruction order.
+    [*] Let destructors enforce reverse destruction order.
 [ ] If using explicit handles:
     [ ] Initialize every handle to null.
     [ ] Destroy resources in strict reverse creation order.
@@ -149,10 +149,10 @@ PART 2 - STABILIZE THE PROJECT FOUNDATION
 
 2.3 Improve CMake configuration
 -------------------------------
-[ ] Rename the executable target from vulkan_device_test to the game name.
-[ ] Keep C++20 required.
-[ ] Keep CMAKE_EXPORT_COMPILE_COMMANDS enabled.
-[ ] Add Debug, RelWithDebInfo, and Release build configurations.
+[*] Rename the executable target from vulkan_device_test to the game name.
+[*] Keep C++20 required.
+[*] Keep CMAKE_EXPORT_COMPILE_COMMANDS enabled.
+[*] Add Debug, RelWithDebInfo, and Release build configurations.
 [ ] Define DEBUG or a project-specific debug macro only in debug builds.
 [ ] Add a compile-time option for Vulkan validation.
 [ ] Add a compile-time option for GPU markers.
@@ -171,10 +171,10 @@ PART 2 - STABILIZE THE PROJECT FOUNDATION
     [ ] Severity levels: trace, debug, info, warning, error, fatal.
     [ ] Timestamp.
     [ ] Source subsystem.
-    [ ] Console output.
-    [ ] Log-file output.
+    [*] Console output.
+    [*] Log-file output.
     [ ] Thread-safe writes.
-    [ ] Vulkan validation callback integration.
+    [*] Vulkan validation callback integration.
 [ ] Assertions:
     [ ] Debug assertion for programmer errors.
     [ ] Runtime error reporting for recoverable failures.
@@ -206,8 +206,8 @@ PART 3 - WINDOW, INPUT, AND APPLICATION LOOP
 
 3.1 Window system
 -----------------
-[ ] Initialize GLFW once.
-[ ] Request GLFW_NO_API so GLFW does not create an OpenGL context.
+[*] Initialize GLFW once.
+[*] Request GLFW_NO_API so GLFW does not create an OpenGL context.
 [ ] Create a resizable window.
 [ ] Store framebuffer dimensions separately from logical window dimensions.
 [ ] Register callbacks for:
@@ -220,9 +220,9 @@ PART 3 - WINDOW, INPUT, AND APPLICATION LOOP
     [ ] Window focus.
     [ ] File drop, if useful for development.
 [ ] Handle minimized windows where framebuffer width or height is zero.
-[ ] Expose required Vulkan instance extensions from GLFW.
+[*] Expose required Vulkan instance extensions from GLFW.
 [ ] Provide a method that creates VkSurfaceKHR for the active Vulkan instance.
-[ ] Shut GLFW down after the window is destroyed.
+[*] Shut GLFW down after the window is destroyed.
 
 3.2 Input system
 ----------------
@@ -251,7 +251,7 @@ PART 3 - WINDOW, INPUT, AND APPLICATION LOOP
 
 3.3 Main loop
 -------------
-[ ] Poll platform events.
+[*] Poll platform events.
 [ ] Calculate real elapsed time.
 [ ] Clamp abnormally large frame deltas after pauses or breakpoints.
 [ ] Accumulate time for a fixed simulation update.
@@ -272,7 +272,7 @@ PART 3 - WINDOW, INPUT, AND APPLICATION LOOP
 [ ] Present the swapchain image.
 [ ] Limit catch-up updates to prevent a spiral of death.
 [ ] Define behavior when the app loses focus.
-[ ] Exit cleanly after a close request.
+[*] Exit cleanly after a close request.
 
 
 PART 4 - VULKAN BOOTSTRAP
@@ -280,29 +280,29 @@ PART 4 - VULKAN BOOTSTRAP
 
 4.1 Instance creation
 ---------------------
-[ ] Fill vk::ApplicationInfo with:
-    [ ] Application name.
-    [ ] Application version.
-    [ ] Engine name.
-    [ ] Engine version.
-    [ ] Requested Vulkan API version.
-[ ] Prefer Vulkan 1.3 as a practical baseline unless Vulkan 1.4 is a firm
+[*] Fill vk::ApplicationInfo with:
+    [*] Application name.
+    [*] Application version.
+    [*] Engine name.
+    [*] Engine version.
+    [*] Requested Vulkan API version.
+[*] Prefer Vulkan 1.3 as a practical baseline unless Vulkan 1.4 is a firm
     hardware requirement.
-[ ] Enumerate available instance layers.
-[ ] Enumerate available instance extensions.
-[ ] Request GLFW-required instance extensions.
-[ ] In debug builds, request VK_EXT_debug_utils.
-[ ] Enable VK_LAYER_KHRONOS_validation when installed and requested.
-[ ] Fail with an explicit message when required extensions are missing.
-[ ] Create the Vulkan instance.
+[*] Enumerate available instance layers.
+[*] Enumerate available instance extensions.
+[*] Request GLFW-required instance extensions.
+[*] In debug builds, request VK_EXT_debug_utils.
+[*] Enable VK_LAYER_KHRONOS_validation when installed and requested.
+[*] Fail with an explicit message when required extensions are missing.
+[*] Create the Vulkan instance.
 [ ] Load instance-level dispatch functions if required by the chosen
     Vulkan-Hpp dispatch mode.
 
 4.2 Validation and debugging
 ----------------------------
-[ ] Create a debug messenger immediately after instance creation.
-[ ] Capture validation severity and type.
-[ ] Route validation output through the engine logger.
+[*] Create a debug messenger immediately after instance creation.
+[*] Capture validation severity and type.
+[*] Route validation output through the engine logger.
 [ ] Include object names in validation output where possible.
 [ ] Add debug names to:
     [ ] Queues.
@@ -1453,7 +1453,7 @@ PART 19 - TESTING AND VALIDATION
 
 19.5 Runtime validation
 -----------------------
-[ ] Run Vulkan validation layers in every debug session.
+[*] Run Vulkan validation layers in every debug session.
 [ ] Enable synchronization validation regularly.
 [ ] Test GPU-assisted validation periodically.
 [ ] Test repeated resize and minimize/restore.
@@ -1556,7 +1556,7 @@ PART 23 - BUILD AND DEPLOYMENT AUTOMATION
 [ ] Copy only required runtime files to the output directory.
 [ ] Copy cooked assets and compiled shader binaries to the output directory.
 [ ] Keep compiler, linker, shader compiler, and asset cooker versions recorded.
-[ ] Disable Vulkan validation by default in Release builds.
+[*] Disable Vulkan validation by default in Release builds.
 [ ] Keep validation selectable through a build option.
 [ ] Keep logging selectable by severity and build configuration.
 [ ] Do not link against development-only Vulkan SDK libraries at runtime.
@@ -1577,24 +1577,24 @@ Milestone 0 - Clean architecture
 --------------------------------
 Goal: A maintainable application shell.
 
-[ ] App owns Window and Renderer.
+[*] App owns Window and Renderer.
 [ ] Renderer references the existing Window.
-[ ] Headers have no circular inclusion.
-[ ] Logging and errors work.
-[ ] Main loop runs and exits cleanly.
-[ ] CMake produces clean Debug and Release builds.
+[*] Headers have no circular inclusion.
+[*] Logging and errors work.
+[*] Main loop runs and exits cleanly.
+[*] CMake produces clean Debug and Release builds.
 
 Exit criteria:
-[ ] No compiler errors.
-[ ] No avoidable warnings in project code.
-[ ] Opening and closing the app repeatedly is stable.
+[*] No compiler errors.
+[*] No avoidable warnings in project code.
+[*] Opening and closing the app repeatedly is stable.
 
 Milestone 1 - First Vulkan triangle
 -----------------------------------
 Goal: A validated Vulkan frame reaches the screen.
 
-[ ] Instance.
-[ ] Debug messenger.
+[*] Instance.
+[*] Debug messenger.
 [ ] Surface.
 [ ] Physical device.
 [ ] Logical device and queues.
@@ -1756,22 +1756,22 @@ PART 25 - IMMEDIATE NEXT STEPS FOR THIS PROJECT
 Complete these in order before expanding the engine:
 
 1. Correct class ownership.
-   [ ] Keep one Window instance in App.
+   [*] Keep one Window instance in App.
    [ ] Pass Window by reference to Renderer.
-   [ ] Remove the Window member currently duplicated inside Renderer.
+   [*] Remove the Window member currently duplicated inside Renderer.
 
 2. Correct header dependencies.
-   [ ] Remove broad circular includes from common.h.
-   [ ] Include only required headers in each header.
-   [ ] Forward-declare Window where possible.
+   [*] Remove broad circular includes from common.h.
+   [*] Include only required headers in each header.
+   [*] Forward-declare Window where possible.
 
 3. Choose Vulkan handle style.
-   [ ] Prefer vk::raii for automatic lifetime management, or
+   [*] Prefer vk::raii for automatic lifetime management, or
    [ ] Build explicit move-only wrappers with reliable cleanup.
 
 4. Implement Renderer initialization in explicit stages.
-   [ ] CreateInstance().
-   [ ] SetupDebugMessenger().
+   [*] CreateInstance().
+   [*] SetupDebugMessenger().
    [ ] CreateSurface().
    [ ] SelectPhysicalDevice().
    [ ] CreateLogicalDevice().
@@ -1782,7 +1782,7 @@ Complete these in order before expanding the engine:
 5. Do not create important Vulkan data as temporary constructor variables.
    [ ] Store long-lived instance/device/swapchain resources as Renderer-owned
        members.
-   [ ] Keep short-lived create-info structures local.
+   [*] Keep short-lived create-info structures local.
 
 6. Replace raw public state with private members and narrow methods.
    [ ] Window exposes NativeHandle(), ShouldClose(), PollEvents(), and
@@ -1805,7 +1805,7 @@ FINAL ENGINE COMPLETION CHECKLIST
 =================================
 
 Core
-[ ] Clean startup and shutdown.
+[*] Clean startup and shutdown.
 [ ] Stable ownership and lifetimes.
 [ ] Logging, assertions, configuration, profiling.
 [ ] Fixed-step simulation.

@@ -3,6 +3,7 @@
 
 #include <array>
 #include <cstdint>
+#include <stdexcept>
 
 #define GAME_NAME "Oblong Sailing Game"
 #define ENGINE_NAME "Oblong Engine"
