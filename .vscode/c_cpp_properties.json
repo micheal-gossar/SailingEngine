@@ -1,21 +1,31 @@
 {
     "configurations": [
         {
-            "name": "Win32",
+            "name": "Debug (GCC)",
             "compilerPath": "C:/msys64/ucrt64/bin/g++.exe",
-            "compileCommands": "${workspaceFolder}/build/compile_commands.json",
+            "compileCommands": "${workspaceFolder}/build/debug/compile_commands.json",
             "cStandard": "c17",
             "cppStandard": "c++20",
             "intelliSenseMode": "windows-gcc-x64",
             "includePath": [
-                "${workspaceFolder}/header",
-                "${workspaceFolder}/header/**",
+                "${workspaceFolder}/include",
+                "${workspaceFolder}/include/**",
                 "${workspaceFolder}/src",
                 "${workspaceFolder}/src/**",
                 "${workspaceFolder}/third_party/glfw/include",
                 "${workspaceFolder}/third_party/glm",
                 "${env:VULKAN_SDK}/Include"
-            ]
+            ],
+            "browse": {
+                "path": [
+                    "${workspaceFolder}/include",
+                    "${workspaceFolder}/src",
+                    "${workspaceFolder}/third_party/glfw/include",
+                    "${workspaceFolder}/third_party/glm",
+                    "${env:VULKAN_SDK}/Include"
+                ],
+                "limitSymbolsToIncludedHeaders": true
+            }
         }
     ],
     "version": 4

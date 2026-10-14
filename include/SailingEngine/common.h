@@ -3,17 +3,13 @@
 
 #include <array>
 #include <cstdint>
-#include <stdexcept>
+inline constexpr char GAME_NAME[] = "Oblong Sailing Game";
+inline constexpr char ENGINE_NAME[] = "Oblong Engine";
 
-#define GAME_NAME "Oblong Sailing Game"
-#define ENGINE_NAME "Oblong Engine"
+constexpr uint32_t WIDTH = 1280;
+constexpr uint32_t HEIGHT = 720;
 
-constexpr uint32_t WIDTH = 800;
-constexpr uint32_t HEIGHT = 600;
-
-inline constexpr std::array validationLayers = {
-    "VK_LAYER_KHRONOS_validation"
-};
+inline constexpr std::array validationLayers = {"VK_LAYER_KHRONOS_validation"};
 
 #ifdef NDEBUG
 constexpr bool enableValidationLayers = false;
@@ -22,11 +18,7 @@ constexpr bool inDebug = false;
 constexpr bool enableValidationLayers = true;
 constexpr bool inDebug = true;
 #endif
+constexpr int MAX_FRAMES_IN_FLIGHT = 2;
 
-#ifdef PREFORMANCE_
-constexpr bool preformance = true;
-#else
-constexpr bool preformance = false;
-#endif
 
 #endif

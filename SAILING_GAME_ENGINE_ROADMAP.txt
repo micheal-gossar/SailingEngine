@@ -23,6 +23,27 @@ Technical assumptions:
 10. Use real-time approximations for ocean and fluid behavior instead of
     computational fluid dynamics.
 
+Current implementation snapshot (2026-10-14)
+--------------------------------------------
+
+- First-party C++: 12 files, 1,372 nonblank lines, 1,589 physical lines.
+- Detailed checklist: 153 of 1,295 items complete (11.8%).
+- Milestone 0: 6 of 6 implementation items and all exit criteria complete.
+- Milestone 1: 10 of 11 implementation items and 1 of 3 exit criteria complete.
+- Code-quality grade: B.
+  Strengths: RAII ownership, warning-clean Debug and Release builds,
+  hierarchical error logging, and validation-clean runtime smoke tests.
+  Deductions: Renderer remains monolithic, automated tests and CI are absent,
+  and resize/out-of-date swapchain recovery is incomplete.
+- Progress grade: B+.
+  The application foundation and first-frame path are strong, but most 3D,
+  simulation, asset, sailing, world, and deployment systems remain unstarted.
+- Current focus: finish resize/out-of-date swapchain recovery, then add depth,
+  camera, mesh upload, and automated tests.
+- Latest validation: Debug and Release compiled and linked; startup, shutdown,
+  UI rendering, and live FIFO/Immediate VSync switching passed with zero
+  Vulkan validation errors.
+
 
 PART 1 - DEFINE TECHNICAL REQUIREMENTS
 =====================================
@@ -31,8 +52,8 @@ PART 1 - DEFINE TECHNICAL REQUIREMENTS
 --------------------------------------
 [*] Define the minimum Vulkan API version.
 [*] Define required Vulkan instance extensions.
-[ ] Define required Vulkan device extensions.
-[ ] Define required physical-device features.
+[*] Define required Vulkan device extensions.
+[*] Define required physical-device features.
 [ ] Define optional features with fallback paths.
 [ ] Define supported compilers and minimum versions.
 [*] Define Debug, RelWithDebInfo, and Release configurations.
@@ -67,8 +88,8 @@ PART 2 - STABILIZE THE PROJECT FOUNDATION
 ---------------------------------------------------
 [*] Make App the top-level owner of long-lived game systems.
 [*] Make Window own exactly one GLFWwindow pointer.
-[ ] Make Renderer receive a Window reference; do not let Renderer own a second
-    Window instance.
+[*] Make Renderer receive a non-owning Window pointer; do not let Renderer own
+    a second Window instance.
 [*] Remove circular header inclusion.
 [*] Keep common.h limited to stable, genuinely common declarations.
 [*] Prefer forward declarations over including large headers.
@@ -80,9 +101,9 @@ PART 2 - STABILIZE THE PROJECT FOUNDATION
     [*] Create vk::raii::Context first.
     [*] Store vk::raii::Instance.
     [*] Store vk::raii::DebugUtilsMessengerEXT.
-    [ ] Store vk::raii::SurfaceKHR.
-    [ ] Store vk::raii::PhysicalDevice.
-    [ ] Store vk::raii::Device.
+    [*] Store vk::raii::SurfaceKHR.
+    [*] Store vk::raii::PhysicalDevice.
+    [*] Store vk::raii::Device.
     [*] Let destructors enforce reverse destruction order.
 [ ] If using explicit handles:
     [ ] Initialize every handle to null.
@@ -156,34 +177,35 @@ PART 2 - STABILIZE THE PROJECT FOUNDATION
 [ ] Define DEBUG or a project-specific debug macro only in debug builds.
 [ ] Add a compile-time option for Vulkan validation.
 [ ] Add a compile-time option for GPU markers.
-[ ] Add a compile-time option for sanitizers where supported.
-[ ] Add shader compilation as a CMake build step.
-[ ] Track shader source files as target sources for IDE visibility.
-[ ] Copy or install runtime assets next to the executable.
+[*] Add a compile-time option for sanitizers where supported.
+[*] Add shader compilation as a CMake build step.
+[*] Track shader source files as target sources for IDE visibility.
+[*] Copy or install runtime assets next to the executable.
 [ ] Add warnings-as-errors only after the warning baseline is clean.
 [ ] Add separate engine and game libraries if build times or testing require it.
-[ ] Avoid recursive source globbing in a mature project; list production source
+[*] Avoid recursive source globbing in a mature project; list production source
     files explicitly so accidental files do not silently enter the build.
 
 2.4 Add foundational utilities
 ------------------------------
 [ ] Logging:
     [ ] Severity levels: trace, debug, info, warning, error, fatal.
-    [ ] Timestamp.
-    [ ] Source subsystem.
+    [*] Timestamp.
+    [*] Source subsystem.
     [*] Console output.
     [*] Log-file output.
-    [ ] Thread-safe writes.
+    [*] Delete timestamped log files after the 30-day retention period.
+    [*] Thread-safe writes.
     [*] Vulkan validation callback integration.
 [ ] Assertions:
     [ ] Debug assertion for programmer errors.
-    [ ] Runtime error reporting for recoverable failures.
+    [*] Runtime error reporting for recoverable failures.
     [ ] Fatal error path with a useful message.
 [ ] Timing:
     [ ] Monotonic clock.
     [ ] Per-frame delta time.
     [ ] Fixed simulation time step.
-    [ ] Frame-time smoothing for UI.
+    [*] Frame-time smoothing for UI.
 [ ] Configuration:
     [ ] Development defaults.
     [ ] User graphics settings.
@@ -219,9 +241,9 @@ PART 3 - WINDOW, INPUT, AND APPLICATION LOOP
     [ ] Character input.
     [ ] Window focus.
     [ ] File drop, if useful for development.
-[ ] Handle minimized windows where framebuffer width or height is zero.
+[*] Handle minimized windows where framebuffer width or height is zero.
 [*] Expose required Vulkan instance extensions from GLFW.
-[ ] Provide a method that creates VkSurfaceKHR for the active Vulkan instance.
+[*] Provide a method that creates VkSurfaceKHR for the active Vulkan instance.
 [*] Shut GLFW down after the window is destroyed.
 
 3.2 Input system
@@ -267,9 +289,9 @@ PART 3 - WINDOW, INPUT, AND APPLICATION LOOP
     [ ] Camera.
     [ ] Animation.
     [ ] Audio listener.
-    [ ] UI.
-[ ] Build and submit the frame.
-[ ] Present the swapchain image.
+    [*] UI.
+[*] Build and submit the frame.
+[*] Present the swapchain image.
 [ ] Limit catch-up updates to prevent a spiral of death.
 [ ] Define behavior when the app loses focus.
 [*] Exit cleanly after a close request.
@@ -322,22 +344,22 @@ PART 4 - VULKAN BOOTSTRAP
 
 4.3 Surface and physical-device selection
 -----------------------------------------
-[ ] Create the GLFW Vulkan surface.
-[ ] Enumerate physical devices.
+[*] Create the GLFW Vulkan surface.
+[*] Enumerate physical devices.
 [ ] For each physical device, query:
-    [ ] Device properties.
-    [ ] Device features.
-    [ ] Vulkan 1.1/1.2/1.3 feature structures.
+    [*] Device properties.
+    [*] Device features.
+    [*] Vulkan 1.1/1.2/1.3 feature structures.
     [ ] Memory properties.
-    [ ] Queue-family properties.
-    [ ] Device extensions.
+    [*] Queue-family properties.
+    [*] Device extensions.
     [ ] Surface formats.
     [ ] Present modes.
     [ ] Surface capabilities.
 [ ] Require:
-    [ ] Graphics queue support.
-    [ ] Presentation support.
-    [ ] VK_KHR_swapchain.
+    [*] Graphics queue support.
+    [*] Presentation support.
+    [*] VK_KHR_swapchain.
     [ ] A usable surface format.
     [ ] A usable present mode.
 [ ] Strongly prefer:
@@ -346,8 +368,8 @@ PART 4 - VULKAN BOOTSTRAP
     [ ] Dedicated compute queue.
     [ ] Sampler anisotropy.
     [ ] Timeline semaphores.
-    [ ] Synchronization2.
-    [ ] Dynamic rendering.
+    [*] Synchronization2.
+    [*] Dynamic rendering.
     [ ] Descriptor indexing, if the material design uses it.
 [ ] Score compatible devices.
 [ ] Print the selected GPU and driver information.
@@ -357,14 +379,14 @@ PART 4 - VULKAN BOOTSTRAP
 4.4 Logical device and queues
 -----------------------------
 [ ] Select queue families for:
-    [ ] Graphics.
-    [ ] Presentation.
+    [*] Graphics.
+    [*] Presentation.
     [ ] Compute.
     [ ] Transfer.
 [ ] Deduplicate queue-family creation requests.
-[ ] Enable only features that were queried and confirmed.
-[ ] Create the logical device.
-[ ] Retrieve queue handles.
+[*] Enable only features that were queried and confirmed.
+[*] Create the logical device.
+[*] Retrieve queue handles.
 [ ] Create one command pool per queue family and per worker thread where
     parallel recording is used.
 [ ] Prefer transient command pools for short-lived upload commands.
@@ -392,23 +414,23 @@ PART 5 - SWAPCHAIN AND FRAME EXECUTION
 
 5.1 Swapchain
 -------------
-[ ] Query surface capabilities every time the swapchain is recreated.
-[ ] Choose an sRGB surface format.
+[*] Query surface capabilities every time the swapchain is recreated.
+[*] Choose an sRGB surface format.
 [ ] Prefer mailbox presentation when available for low-latency uncapped
     rendering.
-[ ] Use FIFO as the guaranteed VSync mode.
-[ ] Clamp the requested image count to surface limits.
-[ ] Choose the swap extent from current framebuffer dimensions.
+[*] Use FIFO as the guaranteed VSync mode.
+[*] Clamp the requested image count to surface limits.
+[*] Choose the swap extent from current framebuffer dimensions.
 [ ] Select exclusive or concurrent sharing based on graphics/present queues.
-[ ] Create one image view per swapchain image.
+[*] Create one image view per swapchain image.
 [ ] Create a depth image and view.
 [ ] Select a supported depth format.
 [ ] Add a stencil aspect only when the depth format contains stencil.
 [ ] Recreate all size-dependent render targets after a resize.
-[ ] Defer recreation while minimized.
+[*] Defer recreation while minimized.
 [ ] Correctly handle VK_ERROR_OUT_OF_DATE_KHR.
 [ ] Correctly handle VK_SUBOPTIMAL_KHR.
-[ ] Destroy old swapchain resources only after the GPU no longer uses them.
+[*] Destroy old swapchain resources only after the GPU no longer uses them.
 
 5.2 Frames in flight
 --------------------
@@ -422,27 +444,27 @@ PART 5 - SWAPCHAIN AND FRAME EXECUTION
     [ ] Per-frame upload allocator.
     [ ] Per-frame descriptor allocator.
     [ ] Per-frame uniform data.
-[ ] Wait only for the frame slot being reused.
-[ ] Acquire the next swapchain image.
-[ ] Reset frame-local resources.
-[ ] Record commands.
+[*] Wait only for the frame slot being reused.
+[*] Acquire the next swapchain image.
+[*] Reset frame-local resources.
+[*] Record commands.
 [ ] Submit using synchronization2 where available.
-[ ] Present.
+[*] Present.
 [ ] Track which frame owns each swapchain image if fences are used.
-[ ] Avoid vkDeviceWaitIdle during normal rendering.
+[*] Avoid vkDeviceWaitIdle during normal rendering.
 
 5.3 Resource synchronization
 ----------------------------
 [ ] Define which queue owns every resource.
 [ ] Track image layouts.
-[ ] Use precise pipeline stages and access masks.
+[*] Use precise pipeline stages and access masks.
 [ ] Add barriers for:
     [ ] Upload completion before shader reads.
     [ ] Compute writes before graphics reads.
     [ ] Color attachment writes before post-processing reads.
     [ ] Depth writes before depth sampling.
-    [ ] Swapchain transition to color attachment.
-    [ ] Swapchain transition to presentation.
+    [*] Swapchain transition to color attachment.
+    [*] Swapchain transition to presentation.
 [ ] Use timeline semaphores for cross-queue scheduling if multiple queues are
     used.
 [ ] Validate synchronization with the synchronization validation feature.
@@ -479,8 +501,8 @@ PART 6 - CORE RENDERING ARCHITECTURE
 6.2 Shader system
 -----------------
 [ ] Choose GLSL or HLSL as the shader source language.
-[ ] Compile shaders to SPIR-V during the build.
-[ ] Produce compiler errors with file and line information.
+[*] Compile shaders to SPIR-V during the build.
+[*] Produce compiler errors with file and line information.
 [ ] Support include files for shared shader code.
 [ ] Generate dependency information so included shader changes trigger rebuilds.
 [ ] Reflect SPIR-V to obtain:
@@ -1216,9 +1238,9 @@ PART 15 - USER INTERFACE AND ACCESSIBILITY
 
 15.1 Development UI
 -------------------
-[ ] Integrate Dear ImGui or an equivalent debug UI.
+[*] Integrate Dear ImGui or an equivalent debug UI.
 [ ] Display:
-    [ ] FPS and frame-time graph.
+    [*] FPS and frame-time graph.
     [ ] CPU/GPU timings.
     [ ] GPU memory.
     [ ] Draw calls and triangles.
@@ -1228,7 +1250,7 @@ PART 15 - USER INTERFACE AND ACCESSIBILITY
     [ ] Wave parameters.
     [ ] Vessel forces and torques.
     [ ] Validation messages.
-[ ] Add controls for live tuning.
+[*] Add controls for live tuning.
 [ ] Allow saving tuned values back to data files.
 
 15.2 Game HUD
@@ -1496,7 +1518,7 @@ PART 20 - ERROR HANDLING AND RECOVERY
     [ ] Save logs.
     [ ] Show a useful message.
     [ ] Attempt recreation only if thoroughly tested.
-[ ] Never convert a failure into a success-shaped empty object without logging
+[*] Never convert a failure into a success-shaped empty object without logging
     or propagating the error.
 
 
@@ -1549,16 +1571,16 @@ PART 23 - BUILD AND DEPLOYMENT AUTOMATION
 =========================================
 
 [ ] Produce reproducible Debug, RelWithDebInfo, and Release builds.
-[ ] Compile shaders as explicit build targets.
+[*] Compile shaders as explicit build targets.
 [ ] Recompile shaders when source files or included shader files change.
-[ ] Fail the build when shader compilation fails.
+[*] Fail the build when shader compilation fails.
 [ ] Run the asset cooker as an explicit build or packaging target.
 [ ] Copy only required runtime files to the output directory.
 [ ] Copy cooked assets and compiled shader binaries to the output directory.
 [ ] Keep compiler, linker, shader compiler, and asset cooker versions recorded.
 [*] Disable Vulkan validation by default in Release builds.
 [ ] Keep validation selectable through a build option.
-[ ] Keep logging selectable by severity and build configuration.
+[*] Keep logging selectable by severity and build configuration.
 [ ] Do not link against development-only Vulkan SDK libraries at runtime.
 [ ] Verify runtime DLL dependencies automatically.
 [ ] Generate a clean deployment directory from an empty build directory.
@@ -1578,7 +1600,7 @@ Milestone 0 - Clean architecture
 Goal: A maintainable application shell.
 
 [*] App owns Window and Renderer.
-[ ] Renderer references the existing Window.
+[*] Renderer references the existing Window.
 [*] Headers have no circular inclusion.
 [*] Logging and errors work.
 [*] Main loop runs and exits cleanly.
@@ -1595,18 +1617,18 @@ Goal: A validated Vulkan frame reaches the screen.
 
 [*] Instance.
 [*] Debug messenger.
-[ ] Surface.
-[ ] Physical device.
-[ ] Logical device and queues.
-[ ] Swapchain.
-[ ] Command buffers.
-[ ] Synchronization.
-[ ] Clear screen.
-[ ] Triangle.
+[*] Surface.
+[*] Physical device.
+[*] Logical device and queues.
+[*] Swapchain.
+[*] Command buffers.
+[*] Synchronization.
+[*] Clear screen.
+[*] Triangle.
 [ ] Resize handling.
 
 Exit criteria:
-[ ] Zero Vulkan validation errors.
+[*] Zero Vulkan validation errors.
 [ ] Resize, minimize, and restore work.
 [ ] Stable operation for at least 30 minutes.
 
@@ -1757,7 +1779,7 @@ Complete these in order before expanding the engine:
 
 1. Correct class ownership.
    [*] Keep one Window instance in App.
-   [ ] Pass Window by reference to Renderer.
+   [*] Pass Window to Renderer as a non-owning pointer.
    [*] Remove the Window member currently duplicated inside Renderer.
 
 2. Correct header dependencies.
@@ -1772,16 +1794,17 @@ Complete these in order before expanding the engine:
 4. Implement Renderer initialization in explicit stages.
    [*] CreateInstance().
    [*] SetupDebugMessenger().
-   [ ] CreateSurface().
-   [ ] SelectPhysicalDevice().
-   [ ] CreateLogicalDevice().
+   [*] CreateSurface().
+   [*] SelectPhysicalDevice().
+   [*] CreateLogicalDevice().
    [ ] CreateAllocator().
-   [ ] CreateSwapchain().
-   [ ] CreateFrameResources().
+   [*] CreateSwapchain().
+   [*] CreateFrameResources().
 
 5. Do not create important Vulkan data as temporary constructor variables.
-   [ ] Store long-lived instance/device/swapchain resources as Renderer-owned
+   [*] Store long-lived instance and device resources as Renderer-owned
        members.
+   [*] Store long-lived swapchain resources as Renderer-owned members.
    [*] Keep short-lived create-info structures local.
 
 6. Replace raw public state with private members and narrow methods.
@@ -1791,7 +1814,7 @@ Complete these in order before expanding the engine:
        only if explicit shutdown is needed.
 
 7. Enable validation and produce a clear screen.
-   [ ] Stop and fix all validation errors before adding mesh rendering.
+   [*] Stop and fix all validation errors before adding mesh rendering.
 
 8. Add a fixed-step loop before implementing buoyancy.
    [ ] Keep render interpolation separate from authoritative physics.
@@ -1811,7 +1834,7 @@ Core
 [ ] Fixed-step simulation.
 
 Vulkan
-[ ] Validated instance/device/swapchain.
+[*] Validated instance/device/swapchain.
 [ ] Correct synchronization.
 [ ] Memory allocator.
 [ ] Resource lifetime management.
@@ -1826,7 +1849,7 @@ Rendering
 [ ] Terrain and vegetation.
 [ ] Particles.
 [ ] Post-processing.
-[ ] UI.
+[*] UI.
 
 Sailing
 [ ] Queryable waves.

@@ -1,7 +1,7 @@
 #ifndef DEBUG_MANAGER_H
 #define DEBUG_MANAGER_H
 
-#include "Logging/logger.h"
+#include "SailingEngine/Logging/logger.h"
 
 #if defined(__INTELLISENSE__) || !defined(USE_CPP20_MODULES)
 #include <vulkan/vulkan_raii.hpp>
@@ -11,16 +11,14 @@ import vulkan_hpp;
 
 class DebugManager {
 public:
-    DebugManager(Logger& logger, const vk::raii::Instance& instance);
+    DebugManager(Logger& outputLogger, const vk::raii::Instance& instance);
 
     static VKAPI_ATTR vk::Bool32 VKAPI_CALL debugCallback(
-        vk::DebugUtilsMessageSeverityFlagBitsEXT severity,
-        vk::DebugUtilsMessageTypeFlagsEXT type,
-        const vk::DebugUtilsMessengerCallbackDataEXT* callbackData,
-        void* userData);
+        vk::DebugUtilsMessageSeverityFlagBitsEXT severity, vk::DebugUtilsMessageTypeFlagsEXT type,
+        const vk::DebugUtilsMessengerCallbackDataEXT* callbackData, void* userData);
 
 private:
-    Logger& logger;
+    LogStream validationLog;
     vk::raii::DebugUtilsMessengerEXT debugMessenger = nullptr;
 };
 

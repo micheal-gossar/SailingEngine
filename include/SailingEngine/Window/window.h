@@ -1,13 +1,14 @@
 #ifndef WINDOW_H
 #define WINDOW_H
 
-#include "common.h"
+#include "SailingEngine/Logging/logger.h"
+#include "SailingEngine/common.h"
 
 #include <GLFW/glfw3.h>
 
 class Window {
 public:
-    Window();
+    explicit Window(Logger& logger);
     ~Window();
 
     Window(const Window&) = delete;
@@ -15,12 +16,10 @@ public:
 
     void Show();
 
-    [[nodiscard]] GLFWwindow* GetWindow() const {
-        return window;
-    }
+    [[nodiscard]] GLFWwindow* GetWindow() const { return window; }
 
 private:
+    LogStream windowLog;
     GLFWwindow* window = nullptr;
-
 };
 #endif

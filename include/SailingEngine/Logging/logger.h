@@ -1,24 +1,41 @@
 #ifndef LOGGER_H
 #define LOGGER_H
 
+#include <cstddef>
 #include <fstream>
-#include <functional>
-#include <ostream>
+#include <mutex>
+#include <string>
 #include <string_view>
+#include <unordered_map>
 #include <vector>
 
-#define RESET   "\033[0m"
-#define RED     "\033[31m"
-#define GREEN   "\033[32m"
-#define YELLOW  "\033[33m"
-#define BLUE    "\033[34m"
-#define CYAN    "\033[36m"
+enum class LogLevel {
+    Debug,
+    Info,
+    Warning,
+    Error,
+};
 
+class Logger;
 
-struct StreamData {
-    std::reference_wrapper<std::ostream> stream;
-    const char* streamName;
-    const char* color;
+class LogStream {
+public:
+    [[nodiscard]] LogStream Child(std::string name) const;
+
+    void Debug(std::string_view message) const;
+    void Info(std::string_view message) const;
+    void Warning(std::string_view message) const;
+    void Error(std::string_view message) const;
+
+    [[nodiscard]] std::string_view Name() const { return path; }
+
+private:
+    friend class Logger;
+
+    LogStream(Logger& owner, std::string streamPath);
+
+    Logger* logger;
+    std::string path;
 };
 
 class Logger {
@@ -26,13 +43,28 @@ public:
     Logger();
     ~Logger() = default;
 
-    void Log(std::string_view message, std::string_view streamName);
+    Logger(const Logger&) = delete;
+    Logger& operator=(const Logger&) = delete;
+
+    [[nodiscard]] LogStream CreateStream(std::string name);
+    void Log(std::string_view message, LogLevel level, std::string_view streamName);
     void Flush();
-    void addStream(std::reference_wrapper<std::ostream> stream, const char* streamName);
-    void addStream(std::reference_wrapper<std::ostream> stream, const char* streamName, const char* color);
+    [[nodiscard]] static std::vector<char> readFile(const std::string& filename);
 
 private:
-    std::vector<StreamData> stream;
+    friend class LogStream;
+
+    struct StreamDefinition {
+        std::string name;
+        std::string parentPath;
+        std::size_t depth;
+    };
+
+    [[nodiscard]] LogStream CreateChildStream(std::string_view parentPath, std::string name);
+    [[nodiscard]] std::string FormatCategory(std::string_view streamName) const;
+
+    mutable std::mutex mutex;
+    std::unordered_map<std::string, StreamDefinition> streams;
     std::ofstream logFile;
 };
 

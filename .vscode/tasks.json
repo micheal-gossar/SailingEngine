@@ -2,7 +2,7 @@
     "version": "2.0.0",
     "tasks": [
         {
-            "label": "Build Oblong Sailing Game (Debug)",
+            "label": "Build: Debug",
             "type": "process",
             "command": "powershell.exe",
             "args": [
@@ -10,7 +10,7 @@
                 "-ExecutionPolicy",
                 "Bypass",
                 "-File",
-                "${workspaceFolder}\\build.ps1",
+                "${workspaceFolder}\\scripts\\build.ps1",
                 "-Configuration",
                 "Debug"
             ],
@@ -20,10 +20,13 @@
             "problemMatcher": [
                 "$gcc"
             ],
-            "group": "build"
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            }
         },
         {
-            "label": "Build Oblong Sailing Game (Release)",
+            "label": "Build: Release",
             "type": "process",
             "command": "powershell.exe",
             "args": [
@@ -31,7 +34,7 @@
                 "-ExecutionPolicy",
                 "Bypass",
                 "-File",
-                "${workspaceFolder}\\build.ps1",
+                "${workspaceFolder}\\scripts\\build.ps1",
                 "-Configuration",
                 "Release"
             ],
@@ -44,7 +47,18 @@
             "group": "build"
         },
         {
-            "label": "Build Oblong Sailing Game (Performance)",
+            "label": "Run: Debug",
+            "type": "process",
+            "command": "${workspaceFolder}\\build\\debug\\bin\\oblong_sailing_game.exe",
+            "dependsOrder": "sequence",
+            "dependsOn": "Build: Debug",
+            "options": {
+                "cwd": "${workspaceFolder}\\build\\debug\\bin"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "Clean and Build: Debug",
             "type": "process",
             "command": "powershell.exe",
             "args": [
@@ -52,9 +66,10 @@
                 "-ExecutionPolicy",
                 "Bypass",
                 "-File",
-                "${workspaceFolder}\\build.ps1",
+                "${workspaceFolder}\\scripts\\build.ps1",
                 "-Configuration",
-                "Performance"
+                "Debug",
+                "-Clean"
             ],
             "options": {
                 "cwd": "${workspaceFolder}"
@@ -62,102 +77,6 @@
             "problemMatcher": [
                 "$gcc"
             ],
-            "group": "build"
-        },
-        {
-            "label": "Build and Run Oblong Sailing Game (Debug)",
-            "type": "process",
-            "command": "powershell.exe",
-            "args": [
-                "-NoProfile",
-                "-Command",
-                "Start-Process -FilePath '${workspaceFolder}\\build\\Debug\\oblong_sailing_game.exe' -WorkingDirectory '${workspaceFolder}'"
-            ],
-            "dependsOrder": "sequence",
-            "dependsOn": "Build Oblong Sailing Game (Debug)",
-            "options": {
-                "cwd": "${workspaceFolder}"
-            },
-            "problemMatcher": [],
-            "group": "build"
-        },
-        {
-            "label": "Build and Run Oblong Sailing Game (Release)",
-            "type": "process",
-            "command": "powershell.exe",
-            "args": [
-                "-NoProfile",
-                "-Command",
-                "Start-Process -FilePath '${workspaceFolder}\\build\\Release\\oblong_sailing_game.exe' -WorkingDirectory '${workspaceFolder}'"
-            ],
-            "dependsOrder": "sequence",
-            "dependsOn": "Build Oblong Sailing Game (Release)",
-            "options": {
-                "cwd": "${workspaceFolder}"
-            },
-            "problemMatcher": [],
-            "group": "build"
-        },
-        {
-            "label": "Build and Run Oblong Sailing Game (Performance)",
-            "type": "process",
-            "command": "powershell.exe",
-            "args": [
-                "-NoProfile",
-                "-Command",
-                "Start-Process -FilePath '${workspaceFolder}\\build\\Performance\\oblong_sailing_game.exe' -WorkingDirectory '${workspaceFolder}'"
-            ],
-            "dependsOrder": "sequence",
-            "dependsOn": "Build Oblong Sailing Game (Performance)",
-            "options": {
-                "cwd": "${workspaceFolder}"
-            },
-            "problemMatcher": [],
-            "group": "build"
-        },
-        {
-            "label": "Clean Build Directory (Debug)",
-            "type": "process",
-            "command": "C:\\Program Files\\CMake\\bin\\cmake.exe",
-            "args": [
-                "-E",
-                "remove_directory",
-                "${workspaceFolder}\\build\\Debug"
-            ],
-            "options": {
-                "cwd": "${workspaceFolder}"
-            },
-            "problemMatcher": [],
-            "group": "build"
-        },
-        {
-            "label": "Clean Build Directory (Release)",
-            "type": "process",
-            "command": "C:\\Program Files\\CMake\\bin\\cmake.exe",
-            "args": [
-                "-E",
-                "remove_directory",
-                "${workspaceFolder}\\build\\Release"
-            ],
-            "options": {
-                "cwd": "${workspaceFolder}"
-            },
-            "problemMatcher": [],
-            "group": "build"
-        },
-        {
-            "label": "Clean Build Directory (Performance)",
-            "type": "process",
-            "command": "C:\\Program Files\\CMake\\bin\\cmake.exe",
-            "args": [
-                "-E",
-                "remove_directory",
-                "${workspaceFolder}\\build\\Performance"
-            ],
-            "options": {
-                "cwd": "${workspaceFolder}"
-            },
-            "problemMatcher": [],
             "group": "build"
         }
     ]
